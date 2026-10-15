@@ -46,7 +46,8 @@ sends a plugin's keys into a text field, so keyboard mode is a small field
 that's focused for you. Arrow keys can't work there.
 
 **`/games test`** turns on test mode: the arcade is playable anytime in that
-session, whatever Claude is doing. Run it again to turn it off.
+session, whatever Claude is doing. Run it again to turn it off. The resting
+screen suggests it until you've opened your first game.
 
 ### Stats that make you feel productive, not addicted
 

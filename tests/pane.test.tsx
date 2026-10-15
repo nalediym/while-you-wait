@@ -282,6 +282,9 @@ describe('the handheld on desktop', () => {
     await startSession($)
     const ui = await mountPane($)
     expect(await alt(ui)).toMatch(/Claude's resting/)
+    // A first-timer is shown how to try it now, on the handheld and under it.
+    expect(await alt(ui)).toMatch(/Try \/games test/)
+    expect(await ui.find({ type: 'Text', text: /New here\? Type \/games test/ })).toBeDefined()
     const ran = await $.command.run({ command: 'games', args: 'test' } as never)
     expect(ran.text).toMatch(/test mode ON/)
     expect(await alt(ui)).toMatch(/test mode: MENU/)
@@ -294,6 +297,9 @@ describe('the handheld on desktop', () => {
     await $.command.run({ command: 'games', args: 'test off' } as never)
     expect(await alt(ui)).toMatch(/Claude's resting/)
     expect(await ui.find({ key: 'btn-a' })).toBe(undefined)
+    // Once they've played, the hint is gone: nothing invites play while Claude is idle.
+    expect(await alt(ui)).not.toMatch(/games test/)
+    expect(await ui.find({ type: 'Text', text: /New here\?/ })).toBe(undefined)
   })
 
   test('players get no debug tool and no timeline', async ($, on) => {

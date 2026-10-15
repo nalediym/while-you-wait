@@ -43,6 +43,9 @@ export const freshLive = (): Live => ({
 /** Playable while Claude works, or anytime in test mode. */
 export const isPlayable = (live: Live): boolean => live.phase === 'working' || live.testMode
 
+/** Never opened a game. The resting screen points them at `/games test` so they can try it now. */
+export const isNewPlayer = (save: Save): boolean => !save.g2048 && !save.mines && !save.crossword
+
 export const freshSave = (): Save => ({
   v: 2,
   screen: 'menu',

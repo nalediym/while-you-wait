@@ -7,7 +7,7 @@ import * as Mines from '../games/minesweeper'
 import { entryAt, layout } from '../games/crossword'
 import type { PuzzleData } from '../games/puzzles'
 import type { Live, Save, SessionStats } from '../model'
-import { GAMES, MENU, fmtClock, fmtDuration } from '../model'
+import { GAMES, MENU, fmtClock, fmtDuration, isNewPlayer } from '../model'
 import { GB } from './palette'
 import { Typesetter, normalize, textWidth, wrap } from './pixelfont'
 
@@ -263,7 +263,9 @@ export const drawDevice = (v: DeviceView): { svg: string } => {
     `<circle cx="15" cy="58" r="3" fill="${ledColor(v.live)}"/>` +
     (isOn ? `<circle cx="15" cy="58" r="5" fill="${ledColor(v.live)}" opacity=".25"/>` : '') +
     t.text('PWR', 6, 66, '#8d8fa0') +
-    (v.live.testMode ? t.text('TEST MODE', LCD.x, 171, '#ffb000') : '')
+    (v.live.testMode ? t.text('TEST MODE', LCD.x, 171, '#ffb000') : '') +
+    // Where TEST MODE will light up, a first-timer reads how to turn it on.
+    (!isOn && !v.live.testMode && isNewPlayer(v.save) ? t.text('TRY /GAMES TEST', LCD.x, 171, '#c9cbd6') : '')
 
   const lcdLayer =
     `<g transform="translate(${LCD.x} ${LCD.y})" clip-path="url(#lcdclip)">` +
@@ -283,7 +285,7 @@ export const drawDevice = (v: DeviceView): { svg: string } => {
 export const svgAlt = (v: DeviceView): string => {
   const { save, live } = v
   if (live.testMode && live.phase !== 'working') return `While-you-wait, test mode: ${normalize(save.screen)} screen.`
-  if (live.phase === 'idle') return `While-you-wait. Claude's resting: go ship something.${live.banner === 'done' ? " Claude's done." : ''} This session: ${v.session.turns} tasks shipped.`
+  if (live.phase === 'idle') return `While-you-wait. Claude's resting: go ship something.${live.banner === 'done' ? " Claude's done." : ''} This session: ${v.session.turns} tasks shipped.${isNewPlayer(save) ? ' Try /games test.' : ''}`
   if (live.phase === 'attention') return 'While-you-wait. Paused: Claude needs you.'
   if (live.agents > 0 && !live.isTurnRunning) return `While-you-wait. ${live.agents} background agent${live.agents === 1 ? '' : 's'} working: ${normalize(save.screen)} screen.`
   switch (save.screen) {

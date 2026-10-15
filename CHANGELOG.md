@@ -13,6 +13,8 @@ Installed copies update when `version` in `.claude-plugin/plugin.json` changes.
   nothing extra is written to the store.
 - **Added** `scripts/check.sh` (every check in one go), CI, `CONTRIBUTING.md`
   and this changelog.
+- **Added** a *Try /games test* hint on the resting screen, so a first-timer
+  can play right away. It goes away once you've opened a game.
 
 ## 0.3.6
 

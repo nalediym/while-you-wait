@@ -8,7 +8,7 @@
 import type { BoxProps, ButtonProps, ElementConstructor, InputProps, RenderElement, SvgProps, TextProps } from 'claude-code'
 import { layout } from '../games/crossword'
 import type { Dir, Input } from '../model'
-import { GAMES, MENU, headline, isPlayable, plural } from '../model'
+import { GAMES, MENU, headline, isNewPlayer, isPlayable, plural } from '../model'
 import { drawDevice, svgAlt } from './device'
 import { drawCellsPane } from './pane-cells'
 import type { PaneActions, PaneView } from './pane-cells'
@@ -82,6 +82,13 @@ export const drawPane = (els: PaneElements, view: PaneView, act: PaneActions): R
             <Text dimColor wrap="wrap">
               The arcade unlocks while Claude is working.
             </Text>
+            {isNewPlayer(save) ? (
+              <Box marginTop={1}>
+                <Text bold wrap="wrap">
+                  New here? Type /games test to play right now. Run it again to turn it off.
+                </Text>
+              </Box>
+            ) : null}
           </Box>
         ) : live.phase === 'attention' ? (
           <Text dimColor wrap="wrap">
