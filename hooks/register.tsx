@@ -24,7 +24,7 @@ const sessionRef = { plugin: 'while-you-wait', key: 'session' } as const
 const CLICK_LOG_KEY = 'click-log' // the last screen taps, raw, for diagnosing taps that land wrong
 const TRACE_KEY = 'debug-timeline' // the last events and the state after each: what the self-test reads
 const AGENT_POLL_MS = 3_000
-export const BUILD = '0.3.5' // keep in step with plugin.json; the timeline records which build loaded
+export const BUILD = '0.3.6' // keep in step with plugin.json; the timeline records which build loaded
 const DEBUG_TOOL = 'mcp__while-you-wait__debug'
 const lcdRef = { plugin: 'while-you-wait', key: 'lcd' } as const
 
@@ -183,14 +183,44 @@ const wentIdle = async ($: EngineInterface) => {
 
 const RUNNING = new Set(['pending', 'running'])
 
+/**
+ * Workflow runs this session has in flight, one each. $.agent.list() leaves a
+ * workflow's agents out, so a run counts from the Workflow call that starts
+ * it (or its first agent, for a run that began before this build loaded),
+ * and the engine's own list of background work in flight, handed over
+ * whenever Claude or one of its agents stops, corrects the count.
+ */
+let workflowsNow = 0
+const isWorkflow = (task: { type: string }) => /workflow/i.test(task.type)
+
 /** Recounts this session's running agents; the last one finishing is when Claude is done. */
 const syncAgents = async ($: EngineInterface) => {
-  const running = (await $.agent.list()).filter(a => RUNNING.has(a.status)).length
-  const { before, after } = await transact($, (tx, now) => (running === tx.live.agents ? tx : M.agentsChanged(tx.live, tx.session, running, now)))
+  const subagents = (await $.agent.list()).filter(a => RUNNING.has(a.status)).length
+  const { before, after } = await transact($, (tx, now) => {
+    const running = subagents + workflowsNow
+    return running === tx.live.agents ? tx : M.agentsChanged(tx.live, tx.session, running, now)
+  })
   if (before.live.agents === after.live.agents) return
   if (after.becameIdle) await wentIdle($)
-  await trace($, 'agents', `${before.live.agents} -> ${running}${after.becameIdle ? ', Claude done' : ''}`)
+  await trace($, 'agents', `${before.live.agents} -> ${after.live.agents}${workflowsNow > 0 ? ` (${M.plural(workflowsNow, 'workflow')})` : ''}${after.becameIdle ? ', Claude done' : ''}`)
   if (before.live.phase === 'idle' && after.live.phase !== 'idle') await scheduleOffer($)
+}
+
+const setWorkflows = async ($: EngineInterface, count: number, why: string) => {
+  if (count !== workflowsNow) {
+    const was = workflowsNow
+    workflowsNow = count
+    await trace($, 'workflows', `${was} -> ${count}: ${why}`)
+  }
+  await syncAgents($)
+}
+
+/** The engine's list of background work in flight (classic Stop, SubagentStop): how many workflows still run. */
+const backgroundListed = async ($: EngineInterface, tasks: readonly { type: string }[] | undefined, why: string) => {
+  if (!tasks) return
+  const listed = tasks.filter(isWorkflow).length
+  if (listed > 0) await trace($, 'background', `${why}: ${tasks.map(t => t.type).join(', ')}`)
+  await setWorkflows($, listed, why)
 }
 
 const logClick = ($: EngineInterface, entry: Omit<ClickLog, 'at'>) =>
@@ -234,6 +264,7 @@ const debugTool = async ($: EngineInterface, input: unknown): Promise<string> =>
       live: await getLive($),
       session: { ...(await getSession($)), files: undefined },
       agentList: (await $.agent.list()).map(a => ({ id: a.id, status: a.status, description: a.description })),
+      workflows: workflowsNow,
       paneOpen: await isPaneOpen($),
       save: { screen: save.screen, g2048: save.g2048 && { score: save.g2048.score, moves: save.g2048.moves }, mines: save.mines?.status ?? null, crossword: save.crossword?.puzzleId ?? null, scores: save.scores },
       timeline: (((await $.store.get(TRACE_KEY)) as TraceEntry[] | undefined) ?? []).slice(-25),
@@ -325,7 +356,27 @@ export const register: Register = on => {
     // Any permission prompt or question for this call has been answered by now.
     await setLive($, M.attentionCleared)
     if (String(e.tool) === 'Agent' || String(e.tool) === 'Task') await syncAgents($).catch(() => undefined)
+    // A Workflow call answers at once and its run goes on in the background.
+    if (String(e.tool) === 'Workflow' && !ran.deny && !ran.isError) await setWorkflows($, workflowsNow + 1, 'Workflow called').catch(() => undefined)
     return ran
+  }).catch(($, e, next) => next(e))
+
+  // Never retried on failure, unlike the observers below: a second next(e) would start a second agent.
+  on('agent.spawn', async ($, e, next) => {
+    const spawned = await next(e)
+    if (e.workflow && spawned.agentId !== undefined && workflowsNow === 0) await setWorkflows($, 1, `workflow ${e.workflow.runId} agent started`).catch(() => undefined)
+    return spawned
+  })
+
+  on('classic.Stop', async ($, e, next) => {
+    // No list at all reads as nothing in flight, so a count can never stick once Claude stops.
+    await backgroundListed($, e.background_tasks ?? [], 'Claude stopped').catch(() => undefined)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  on('classic.SubagentStop', async ($, e, next) => {
+    await backgroundListed($, e.background_tasks, `agent ${e.agent_id} stopped`).catch(() => undefined)
+    return next(e)
   }).catch(($, e, next) => next(e))
 
   on('classic.PermissionRequest', async ($, e, next) => {

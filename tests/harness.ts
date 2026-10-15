@@ -43,7 +43,14 @@ export const harness = (on: On, stored: Record<string, unknown> = {}): Harness =
   })
   on('classic.PermissionRequest', () => ({}))
   on('classic.Notification', () => ({}))
+  on('classic.Stop', () => ({}))
+  on('classic.SubagentStop', () => ({}))
   on('agent.list', () => ({ value: h.agents.map(a => ({ ...a })) }))
+  // A workflow's agents never join h.agents: $.agent.list() leaves them out.
+  let spawned = 0
+  on('agent.spawn', () => ({ agentId: `spawned-${++spawned}`, model: 'claude-test' }))
+  const onAny = on as unknown as (event: string, match: object, hook: () => unknown) => void
+  onAny('tool.call', { tool: 'Workflow' }, () => ({ result: 'Workflow launched in background. Task ID: wtask1' }))
   on('ui.panes', () => ({ value: [...panes.values()] }))
   return h
 }

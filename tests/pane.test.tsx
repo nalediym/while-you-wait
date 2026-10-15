@@ -189,6 +189,45 @@ describe('the handheld on desktop', () => {
     expect(await ui.find({ key: 'jump-back' })).toBeDefined()
   })
 
+  test("a background workflow keeps the arcade unlocked, though agent.list() leaves its agents out (seen live)", async ($, on) => {
+    const clock = mock.clock(on, { now: T0 })
+    const h = harness(on)
+    await startSession($)
+    const ui = await mountPane($)
+    await startTurn($, 't1')
+    h.agents = [{ id: 'a1', description: 'tests', type: 'general-purpose', status: 'running' }] as never
+    const callTool = $.tool.call as unknown as (e: object) => Promise<unknown>
+    await callTool({ tool: 'Workflow', tool_use_id: 'u1', script: 'export const meta = {}' })
+    await completeTurn($, 't1')
+    await $.classic.Stop({ stop_hook_active: false, background_tasks: [{ id: 'wtask1', type: 'workflow', status: 'running', description: 'lesson 1' }] })
+    expect(await alt(ui)).toMatch(/2 background agents working/)
+
+    // The plain agent finishes; the workflow's agents end their turns, which no list shows.
+    h.agents = [{ ...h.agents[0]!, status: 'completed' }] as never
+    await clock.advance(3_100)
+    await $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 'w-turn', reason: 'answer', agentId: 'workflow-agent-1' } as never)
+    await $.classic.SubagentStop({ stop_hook_active: false, agent_id: 'workflow-agent-1', agent_transcript_path: '', agent_type: 'workflow-subagent', background_tasks: [{ id: 'wtask1', type: 'workflow', status: 'running', description: 'lesson 1' }] })
+    expect(await alt(ui)).toMatch(/1 background agent working/)
+
+    // The run ends: its notification starts a turn, and Claude stops with nothing left in flight.
+    await startTurn($, 't2')
+    await completeTurn($, 't2')
+    await $.classic.Stop({ stop_hook_active: false, background_tasks: [] })
+    expect(await alt(ui)).toMatch(/Claude's resting.*Claude's done/)
+  })
+
+  test('a workflow that began before this build loaded counts from its first agent', async ($, on) => {
+    mock.clock(on, { now: T0 })
+    harness(on)
+    await startSession($)
+    const ui = await mountPane($)
+    expect(await alt(ui)).toMatch(/Claude's resting/)
+    await $.agent.spawn({ prompt: 'solve', description: 'solve', workflow: { runId: 'wf_1', agentIndex: 1 } } as never)
+    expect(await alt(ui)).toMatch(/1 background agent working/)
+    await $.agent.spawn({ prompt: 'verify', description: 'verify', workflow: { runId: 'wf_1', agentIndex: 2 } } as never)
+    expect(await alt(ui)).toMatch(/1 background agent working/) // one run, however many agents
+  })
+
   test('⌨ Use keyboard: one button turns keyboard mode on (and tries to focus its field) and off', async ($, on) => {
     mock.clock(on, { now: T0 })
     const h = harness(on)
@@ -278,7 +317,7 @@ describe('the handheld on desktop', () => {
     const callTool = $.tool.call as unknown as (e: object) => Promise<{ result?: unknown }>
     const ran = await callTool({ tool: 'mcp__while-you-wait__debug', tool_use_id: 'd1', action: 'status' })
     const report = JSON.parse(String(ran.result))
-    expect(report.build).toBe('0.3.5')
+    expect(report.build).toBe('0.3.6')
     expect(report.live).toMatchObject({ phase: 'working', agents: 1, isTurnRunning: true })
     expect(report.timeline.map((t: { event: string }) => t.event)).toEqual(expect.arrayContaining(['session.start', 'turn.start', 'agents']))
     const on2 = JSON.parse(String((await callTool({ tool: 'mcp__while-you-wait__debug', tool_use_id: 'd2', action: 'test_on' })).result))
