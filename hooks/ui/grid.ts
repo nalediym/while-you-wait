@@ -64,9 +64,10 @@ export const gridCrossword = (p: PuzzleData, c: Crossword, isPaused: boolean): G
   return {
     cols: N, cw: 4, ch: 2, gap: 1, line: GB.darkest,
     cells: c.letters.map((l, i) => {
-      const sup = numbers[i] === null ? undefined : String(numbers[i])
       if (l === '#') return { t: '', fg: GB.darkest, bg: GB.darkest }
-      const base = { t: l, sup, bold: true }
+      // No `undefined` fields: a Client's props must be plain JSON.
+      const num = numbers[i]
+      const base = { t: l, bold: true, ...(num === null || num === undefined ? {} : { sup: String(num) }) }
       if (c.isSolved) return { ...base, fg: GB.darkest, bg: GB.lightest }
       if (i === c.cursor && !isPaused) return { ...base, fg: GB.lightest, bg: GB.dark }
       if (word.has(i) && !isPaused) return { ...base, fg: GB.darkest, bg: GB.light }
