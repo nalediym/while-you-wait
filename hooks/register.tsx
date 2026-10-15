@@ -1,17 +1,16 @@
 // while-you-wait: a Game Boy-style arcade in a side pane that is playable
 // only while Claude works. This file only wires engine events to the pure
-// model (model.ts) and the drawing (ui/pane.tsx).
+// model (model.ts) and the drawing (ui/pane.tsx). With the `devTools` option
+// on, it also keeps an event timeline and registers the debug tool.
 
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { ClickLog, Lcd, Live, Save, SessionStats, TraceEntry } from '../types'
+import type { Live, Save, SessionStats, TraceEntry } from '../types'
 import { PUZZLES } from './games/puzzles'
 import type { Input } from './model'
 import * as M from './model'
-import { boxInputs, keyToInput } from './ui/keys'
+import { boxInputs } from './ui/keys'
 import { drawPane } from './ui/pane'
-import type { ScreenPost } from './ui/screen'
-import type { PadPost } from './ui/pad'
 
 const PANE = 'arcade'
 const TITLE = 'While You Wait'
@@ -21,12 +20,13 @@ const OLD_STORE_KEY = 'save-v1' // v1 also kept stats; its games and bests carry
 const liveRef = { plugin: 'while-you-wait', key: 'live' } as const
 const saveRef = { plugin: 'while-you-wait', key: 'save' } as const
 const sessionRef = { plugin: 'while-you-wait', key: 'session' } as const
-const CLICK_LOG_KEY = 'click-log' // the last screen taps, raw, for diagnosing taps that land wrong
-const TRACE_KEY = 'debug-timeline' // the last events and the state after each: what the self-test reads
+const TRACE_KEY = 'debug-timeline' // the last events and the state after each: what the debug tool reads
 const AGENT_POLL_MS = 3_000
-export const BUILD = '0.3.6' // keep in step with plugin.json; the timeline records which build loaded
+export const BUILD = '0.3.7' // keep in step with plugin.json (scripts/check.sh checks); the timeline records which build loaded
 const DEBUG_TOOL = 'mcp__while-you-wait__debug'
-const lcdRef = { plugin: 'while-you-wait', key: 'lcd' } as const
+
+/** The `devTools` option (plugin.json userConfig): the event timeline and the debug tool. Off for players. */
+let devTools = false
 
 // Read field by field over a fresh value, so a Live an older build wrote reads whole and clean.
 const LIVE_KEYS = Object.keys(M.freshLive()) as (keyof Live)[]
@@ -160,7 +160,7 @@ const toggleKeyboard = async ($: EngineInterface) => {
   await trace($, 'keyboard-mode on', focused.deny ? `focus refused: ${focused.deny}` : 'focus moved to the keys field')
 }
 
-/** One input from a key, a tap or a button. Ignored unless Claude is working. */
+/** One input from a button or the keyboard field. Ignored unless Claude is working. */
 const send = async ($: EngineInterface, input: Input) => {
   const live = await getLive($)
   let changed = false
@@ -223,20 +223,16 @@ const backgroundListed = async ($: EngineInterface, tasks: readonly { type: stri
   await setWorkflows($, listed, why)
 }
 
-const logClick = ($: EngineInterface, entry: Omit<ClickLog, 'at'>) =>
-  serial(async () => {
-    const log = ((await $.store.get(CLICK_LOG_KEY)) as ClickLog[] | undefined) ?? []
-    await $.store.set(CLICK_LOG_KEY, [...log, { at: await $.clock.now(), ...entry }].slice(-30))
-  })
-
-/** Appends to the debug timeline: the event and the state right after it. */
-const trace = ($: EngineInterface, event: string, note?: string) =>
-  serial(async () => {
+/** Appends to the debug timeline (devTools only): the event and the state right after it. */
+const trace = async ($: EngineInterface, event: string, note?: string): Promise<void> => {
+  if (!devTools) return
+  await serial(async () => {
     const live = await getLive($)
     const entry: TraceEntry = { at: await $.clock.now(), event, phase: live.phase, agents: live.agents, isTurnRunning: live.isTurnRunning, testMode: live.testMode, ...(note ? { note } : {}) }
     const log = ((await $.store.get(TRACE_KEY)) as TraceEntry[] | undefined) ?? []
     await $.store.set(TRACE_KEY, [...log, entry].slice(-80))
   })
+}
 
 const setTestMode = async ($: EngineInterface, on: boolean) => {
   await setLive($, l => ({ ...l, testMode: on }))
@@ -268,15 +264,16 @@ const debugTool = async ($: EngineInterface, input: unknown): Promise<string> =>
       paneOpen: await isPaneOpen($),
       save: { screen: save.screen, g2048: save.g2048 && { score: save.g2048.score, moves: save.g2048.moves }, mines: save.mines?.status ?? null, crossword: save.crossword?.puzzleId ?? null, scores: save.scores },
       timeline: (((await $.store.get(TRACE_KEY)) as TraceEntry[] | undefined) ?? []).slice(-25),
-      clickLog: (((await $.store.get(CLICK_LOG_KEY)) as ClickLog[] | undefined) ?? []).slice(-10),
     }
     return JSON.stringify(result, null, 1)
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  devTools = options.devTools === true
+
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'games', description: 'Open the While-You-Wait arcade (playable while Claude works). /games test toggles test mode.', argumentHint: '[test]' })
-    await $.tool.register({
+    if (devTools) await $.tool.register({
       name: 'debug',
       description:
         "Self-test for the while-you-wait arcade plugin: read its live state (phase, running agents, test mode, this session's stats, the save) and its recent event timeline; switch test mode on or off; or show a banner to check how it looks. Use only when checking or debugging the arcade.",
@@ -348,7 +345,7 @@ export const register: Register = on => {
 
   // Observers, not guards: if one fails, whatever it watched goes on untouched.
   on('tool.call', async ($, e, next) => {
-    if (String(e.tool) === DEBUG_TOOL) return { result: await debugTool($, e) } as Awaited<ReturnType<typeof next>>
+    if (devTools && String(e.tool) === DEBUG_TOOL) return { result: await debugTool($, e) } as Awaited<ReturnType<typeof next>>
     const path = (e as { file_path?: unknown; notebook_path?: unknown }).file_path ?? (e as { notebook_path?: unknown }).notebook_path
     await setSession($, t => M.toolCalled(t, String(e.tool), typeof path === 'string' ? path : undefined))
     if (String(e.tool) === 'AskUserQuestion') await attention($, 'AskUserQuestion')
@@ -389,45 +386,15 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  on('ui.message', { requestId: PANE }, async ($, e, next) => {
-    const post = e.data as ScreenPost | PadPost
-    const save = await getSave($)
-    const live = await getLive($)
-    if (post.type === 'press') {
-      await logClick($, { press: post.press ? post.press.kind : 'nothing', ...post.raw })
-      if (!post.press) return next(e)
-    }
-    const onScreen = post.type === 'press' && post.press !== null && ['lcd', 'cell', 'row', 'header'].includes(post.press.kind)
-    if (onScreen && live.phase === 'attention') {
-      await $.ui.close({ id: PANE }) // the "go answer Claude" box
-      return next(e)
-    }
-    const input: Input | undefined =
-      post.type === 'press'
-        ? post.press ? M.pressToInput(save.screen, post.press, post.button) : undefined
-        : post.type === 'tap'
-          ? { kind: 'tap', col: post.col, row: post.row, button: post.button }
-          : post.ctrl || post.meta
-            ? undefined
-            : keyToInput(save.screen, post.key)
-    if (input) await send($, input)
-    return next(e)
-  })
-
-  on('ui.fault', { requestId: PANE }, async ($, e, next) => {
-    await $.state.set(lcdRef, { hasFailed: true } satisfies Lcd)
-    return next(e)
-  })
-
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const els = $.ui.resolve(e)
     const live = await drawnLive($)
     const save = await getSave($)
     const session = await drawnSession($)
-    const lcd: Lcd = (await $.state.get(lcdRef)).value ?? { hasFailed: false }
     return drawPane(
-      { Box: els.Box, Text: els.Text, Button: els.Button, ...('Client' in els ? { Client: els.Client } : {}), ...('Svg' in els ? { Svg: els.Svg } : {}), ...('Input' in els ? { Input: els.Input } : {}) },
-      { live, save, session, now: await $.clock.now(), puzzles: PUZZLES, useClient: e.surface === 'desktop' && !lcd.hasFailed },
+      { Box: els.Box, Text: els.Text, Button: els.Button, ...('Svg' in els ? { Svg: els.Svg } : {}), ...('Input' in els ? { Input: els.Input } : {}) },
+      // The handheld is drawn where it was checked live: the desktop.
+      { live, save, session, now: await $.clock.now(), puzzles: PUZZLES, handheld: e.surface === 'desktop' },
       {
         send: input => void send($, input),
         jumpBack: () => void $.ui.close({ id: PANE }),

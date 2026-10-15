@@ -1,5 +1,4 @@
-// Draws a Grid with Box and Text: shared by the desktop's Client module and
-// the plain fallback tree, so both look identical.
+// Draws a Grid with Box and Text, for the plain fallback pane.
 
 import type { BoxProps, ElementConstructor, RenderElement, TextProps } from 'claude-code'
 import type { Grid } from './grid'

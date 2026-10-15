@@ -98,9 +98,6 @@ export const toggleDir = (p: PuzzleData, s: Crossword): Crossword => {
   return entryAt(p, { cursor: s.cursor, dir: other })?.dir === other ? { ...s, dir: other } : s
 }
 
-export const select = (p: PuzzleData, s: Crossword, i: number): Crossword =>
-  isBlock(p, i) ? s : i === s.cursor ? toggleDir(p, s) : { ...s, cursor: i }
-
 /** The next puzzle to play: the first not yet solved, else the first. */
 export const nextPuzzle = (all: readonly PuzzleData[], solved: readonly string[], after?: string): PuzzleData | undefined => {
   const start = after === undefined ? 0 : all.findIndex(p => p.id === after) + 1

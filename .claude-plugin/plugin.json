@@ -1,9 +1,17 @@
 {
   "name": "while-you-wait",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "A tiny Game Boy-style arcade in a side pane, playable only while Claude is working.",
   "author": { "name": "nalediym" },
   "repository": "https://github.com/nalediym/while-you-wait",
   "license": "MIT",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "devTools": {
+      "type": "boolean",
+      "title": "Developer tools",
+      "description": "For working on the plugin: keeps an event timeline and gives Claude a debug tool that reads the arcade's live state, toggles test mode and shows the banners. Leave off to just play.",
+      "default": false
+    }
+  }
 }

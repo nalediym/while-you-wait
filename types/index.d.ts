@@ -1,8 +1,7 @@
 // The arcade's $.state contract, self-contained. `live` is where Claude is
 // right now; `session` is this session's work stats (never stored: a new
 // session starts from zero); `save` is your games and bests, shared by every
-// session through $.store; `lcd` says whether the desktop's Client works here.
-// Game logic and the model import these types from here.
+// session through $.store. Game logic and the model import these types from here.
 
 export type Dir = 'up' | 'down' | 'left' | 'right'
 
@@ -61,11 +60,8 @@ export type Live = {
   keyboardMode: boolean // the ⌨ button: keys typed go to the game; this session only
 }
 
-/** One line of the debug timeline (store key debug-timeline): what happened, and the state after. */
+/** One line of the debug timeline (store key debug-timeline, devTools only): what happened, and the state after. */
 export type TraceEntry = { at: number; event: string; phase: Phase; agents: number; isTurnRunning: boolean; testMode: boolean; note?: string }
-
-/** One raw click on the handheld, kept so a click that lands wrong can be diagnosed. */
-export type ClickLog = { at: number; press: string; x: number; y: number; fx: number | null; fy: number | null; columns: number; rows: number }
 
 /** This session's work, counted from zero when the session starts. */
 export type SessionStats = {
@@ -97,10 +93,8 @@ export type Save = {
   scores: Scores
 }
 
-export type Lcd = { hasFailed: boolean }
-
 declare module 'claude-code' {
   interface PluginState {
-    'while-you-wait': { live: Live; session: SessionStats; save: Save; lcd: Lcd }
+    'while-you-wait': { live: Live; session: SessionStats; save: Save }
   }
 }

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'claude-code/testing'
 import * as M from '../hooks/model'
 import { boxDelta, boxInputs, keyToInput } from '../hooks/ui/keys'
 import { PUZZLES } from '../hooks/games/puzzles'
-import { hitTest } from '../hooks/ui/grid'
 
 const T0 = new Date(2026, 9, 15, 12).getTime()
 
@@ -133,15 +132,5 @@ describe('model', () => {
     expect(s.scores.crosswordsSolved).toEqual([p.id])
     s = M.act(s, { kind: 'nextPuzzle' }, live, T0, PUZZLES)
     expect(s.crossword?.puzzleId).toBe(PUZZLES[1]!.id)
-  })
-})
-
-describe('grid hit-testing', () => {
-  test('taps map to squares and gaps map to nothing', () => {
-    const g = { cols: 9, cw: 2, ch: 1, gapX: 1, gapY: 0, line: '#000', cells: Array(81).fill({ t: '', fg: '', bg: '' }) }
-    expect(hitTest(g, 0, 0)).toEqual({ col: 0, row: 0 })
-    expect(hitTest(g, 2, 0)).toBe(null) // the gap column
-    expect(hitTest(g, 25, 8)).toEqual({ col: 8, row: 8 })
-    expect(hitTest(g, 27, 0)).toBe(null) // past the edge
   })
 })

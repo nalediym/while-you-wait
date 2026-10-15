@@ -1,8 +1,9 @@
-// The arcade drawn from plain Boxes and Buttons: the fallback for a surface
-// with no Svg (and the seam for a terminal surface in v2). Pure drawing from
-// the model; every press goes out through `act`.
+// The arcade drawn from plain Boxes and Buttons: the fallback for every
+// surface but the desktop (where the handheld was checked live), and the seam
+// for a terminal surface. Pure drawing from the model; every press goes out
+// through `act`.
 
-import type { BoxProps, ButtonProps, ClientProps, ElementConstructor, RenderElement, TextProps } from 'claude-code'
+import type { BoxProps, ButtonProps, ElementConstructor, RenderElement, TextProps } from 'claude-code'
 import * as G2048 from '../games/g2048'
 import * as Mines from '../games/minesweeper'
 import { entryAt, layout } from '../games/crossword'
@@ -18,7 +19,6 @@ export type PaneElements = {
   Box: ElementConstructor<BoxProps>
   Text: ElementConstructor<TextProps>
   Button: ElementConstructor<ButtonProps>
-  Client?: ElementConstructor<ClientProps>
 }
 
 export type PaneView = {
@@ -28,8 +28,8 @@ export type PaneView = {
   session: SessionStats
   now: number
   puzzles: readonly PuzzleData[]
-  /** Draw the handheld (Svg + input pad) rather than plain Boxes; the LCD Client too. */
-  useClient: boolean
+  /** Draw the handheld (Svg + real buttons) rather than plain Boxes. */
+  handheld: boolean
 }
 
 export type PaneActions = {
@@ -79,7 +79,7 @@ export const drawCellsPane = (els: PaneElements, view: PaneView, act: PaneAction
       </Box>
       {isWorking && save.screen !== 'scores' ? drawControls(els, view, act) : null}
       <Text color={GB.light} wrap="wrap">
-        {isWorking ? 'Click the screen, then use the keys. Esc → prompt.' : 'Playable only while Claude works.'}
+        {isWorking ? 'Play with the buttons above.' : 'Playable only while Claude works.'}
       </Text>
     </Box>
   )
@@ -128,7 +128,7 @@ const drawScreen = (els: PaneElements, view: PaneView, act: PaneActions): Render
           <Text color={GB.darkest} bold>
             2048 <Text color={GB.dark}>SCORE {g.score} · BEST {Math.max(save.scores.best2048Score, g.score)}</Text>
           </Text>
-          {drawLcd(els, view, 'lcd-2048', grid2048(g))}
+          {drawLcd(els, grid2048(g))}
           {status ? <Text color={GB.darkest} bold wrap="wrap">{status}</Text> : null}
         </Box>
       )
@@ -137,7 +137,7 @@ const drawScreen = (els: PaneElements, view: PaneView, act: PaneActions): Render
       const m = save.mines
       if (!m) return <Text color={GB.darkest}>…</Text>
       const status =
-        m.status === 'won' ? `CLEARED in ${fmtClock(Mines.elapsed(m, view.now))}!` : m.status === 'lost' ? 'BOOM. START for a new board.' : m.status === 'ready' ? 'Tap any square — the first is always safe.' : ''
+        m.status === 'won' ? `CLEARED in ${fmtClock(Mines.elapsed(m, view.now))}!` : m.status === 'lost' ? 'BOOM. START for a new board.' : m.status === 'ready' ? 'A digs. The first square is always safe.' : ''
       return (
         <Box flexDirection="column" paddingY={1}>
           <Box flexDirection="row" justifyContent="space-between">
@@ -148,7 +148,7 @@ const drawScreen = (els: PaneElements, view: PaneView, act: PaneActions): Render
               FLAG {save.flagMode ? 'ON' : 'OFF'}
             </Button>
           </Box>
-          {drawLcd(els, view, 'lcd-mines', gridMines(m, false))}
+          {drawLcd(els, gridMines(m, false))}
           {status ? <Text color={GB.darkest} bold wrap="wrap">{status}</Text> : null}
         </Box>
       )
@@ -165,7 +165,7 @@ const drawScreen = (els: PaneElements, view: PaneView, act: PaneActions): Render
           <Text color={GB.darkest} bold>
             {p.title.toUpperCase()} <Text color={GB.dark}>{solved}/{view.puzzles.length} solved</Text>
           </Text>
-          {drawLcd(els, view, 'lcd-crossword', gridCrossword(p, c, false))}
+          {drawLcd(els, gridCrossword(p, c, false))}
           {c.isSolved ? (
             <Box flexDirection="column">
               <Text color={GB.darkest} bold>SOLVED! ✦</Text>
@@ -208,11 +208,11 @@ const drawClueList = ({ Box, Text }: PaneElements, p: PuzzleData): RenderElement
   )
 }
 
-const drawLcd = (els: PaneElements, view: PaneView, key: string, grid: Grid): RenderElement => {
-  const { Box, Client } = els
+const drawLcd = (els: PaneElements, grid: Grid): RenderElement => {
+  const { Box } = els
   return (
     <Box marginY={1} flexDirection="row">
-      {view.useClient && Client ? <Client key={key} module="./screen.tsx" props={{ grid }} /> : drawGrid(els, grid)}
+      {drawGrid(els, grid)}
     </Box>
   )
 }

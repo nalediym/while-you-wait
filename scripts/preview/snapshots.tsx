@@ -1,6 +1,6 @@
-// Drives the pane through each state and prints its drawn tree (Client LCDs
-// inlined) as `@@SNAP <name> <json>` lines. scripts/preview.ts runs this as a
-// test in a scratch copy of the mod and renders the trees to HTML.
+// Drives the pane through each state and prints its drawn tree as
+// `@@SNAP <name> <json>` lines. scripts/preview.ts runs this as a test in a
+// scratch copy of the mod and renders the trees to HTML.
 
 import { mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
@@ -8,15 +8,6 @@ import { harness } from './harness'
 
 const T0 = new Date(2026, 9, 15, 15, 30).getTime()
 const COLS = Number('__COLS__')
-
-const inline = async (ui: { drawn: (s?: { in: string }) => Promise<unknown> }, node: unknown): Promise<unknown> => {
-  if (Array.isArray(node)) return Promise.all(node.map(n => inline(ui, n)))
-  if (typeof node !== 'object' || node === null) return node
-  const n = node as { type?: string; props?: { key?: string }; children?: unknown }
-  if (n.type === 'Client' && n.props?.key === 'pad') return null // invisible input layer
-  if (n.type === 'Client' && n.props?.key) return { type: 'Lcd', children: [await inline(ui, await ui.drawn({ in: n.props.key }))] }
-  return { ...n, children: await inline(ui, n.children) }
-}
 
 test('snapshots', { timeoutMs: 20_000 }, async ($: Engine, on) => {
   const clock = mock.clock(on, { now: T0 })
@@ -32,9 +23,7 @@ test('snapshots', { timeoutMs: 20_000 }, async ($: Engine, on) => {
     props: { title: 'While You Wait', isFocused: false, bodyColumns: COLS, placement: 'dock', scroll: { top: 0, bodyRows: 60 }, view: {} } as never,
     viewport: { columns: COLS + 4, rows: 60, isFullscreen: true },
   })
-  const snap = async (name: string) => console.log(`@@SNAP ${name} ${JSON.stringify(await inline(ui, await ui.drawn()))}`)
-
-  const press = (press: unknown, button = 'left') => ui.post({ type: 'press', press, button } as never, { in: 'pad' })
+  const snap = async (name: string) => console.log(`@@SNAP ${name} ${JSON.stringify(await ui.drawn())}`)
 
   await snap('resting')
   await $.turn.start({ text: 'go', turnId: 't1' })
@@ -52,6 +41,7 @@ test('snapshots', { timeoutMs: 20_000 }, async ($: Engine, on) => {
   await snap('mines')
   await button('btn-select')
   await button('open-crossword')
+  await button('keyboard-mode')
   await ui.input({ key: 'keys', text: 'sho', kind: 'change' })
   await snap('crossword')
   await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: {} } as never)

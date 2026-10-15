@@ -7,7 +7,6 @@ import * as Mines from './games/minesweeper'
 import * as Cw from './games/crossword'
 import type { PuzzleData } from './games/puzzles'
 import type { Dir, Live, Save, Screen, SessionStats } from '../types'
-import type { Press } from './ui/hit'
 
 export type { Dir, Live, Save, Screen, SessionStats }
 
@@ -21,7 +20,6 @@ export type Input =
   | { kind: 'select' } // back to the menu
   | { kind: 'letter'; ch: string }
   | { kind: 'erase' }
-  | { kind: 'tap'; col: number; row: number; button: 'left' | 'right' }
   | { kind: 'open'; screen: Screen }
   | { kind: 'flagMode' }
   | { kind: 'nextPuzzle' }
@@ -228,12 +226,10 @@ export const act = (s: Save, input: Input, live: Live, now: number, puzzles: rea
       if (input.kind === 'flagMode') return { ...s, mines: m, flagMode: !s.flagMode }
       if (input.kind === 'dir') return { ...s, mines: Mines.moveCursor(m, input.dir) }
       if (input.kind === 'b' && s.mines.status !== 'playing' && s.mines.status !== 'ready') return { ...s, screen: 'menu' }
-      const at = input.kind === 'tap' ? input.row * m.w + input.col : m.cursor
-      if (input.kind === 'tap' && (input.col < 0 || input.col >= m.w || input.row < 0 || input.row >= m.h)) return s
-      const flag = input.kind === 'b' || ((input.kind === 'a' || input.kind === 'tap') && s.flagMode) || (input.kind === 'tap' && input.button === 'right')
-      const reveal = (input.kind === 'a' || input.kind === 'tap') && !flag
+      const flag = input.kind === 'b' || (input.kind === 'a' && s.flagMode)
+      const reveal = input.kind === 'a' && !flag
       if (!flag && !reveal) return s
-      const next = flag ? Mines.toggleFlag(m, at) : Mines.reveal(m, at, now)
+      const next = flag ? Mines.toggleFlag(m, m.cursor) : Mines.reveal(m, m.cursor, now)
       return recordCleared(s, { ...s, mines: next }, now)
     }
     case 'crossword': {
@@ -249,24 +245,8 @@ export const act = (s: Save, input: Input, live: Live, now: number, puzzles: rea
       else if (input.kind === 'letter') next = Cw.typeLetter(p, c, input.ch)
       else if (input.kind === 'erase' || input.kind === 'b') next = Cw.erase(p, c)
       else if (input.kind === 'a') next = Cw.toggleDir(p, c)
-      else if (input.kind === 'tap' && input.col >= 0 && input.col < Cw.N && input.row >= 0 && input.row < Cw.N)
-        next = Cw.select(p, c, input.row * Cw.N + input.col)
       return next === c ? s : recordCleared(s, { ...s, crossword: next }, now)
     }
-  }
-}
-
-/** A tap on the drawn screen -> an input, per screen. */
-export const pressToInput = (
-  screen: Screen,
-  press: Press,
-  button: 'left' | 'right',
-): Input | undefined => {
-  switch (press.kind) {
-    case 'cell': return { kind: 'tap', col: press.col, row: press.row, button }
-    case 'row': return screen === 'menu' ? { kind: 'open', screen: MENU[press.index] ?? 'menu' } : undefined
-    case 'header': return screen === 'mines' ? { kind: 'flagMode' } : undefined
-    case 'lcd': return undefined
   }
 }
 

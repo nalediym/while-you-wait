@@ -11,11 +11,13 @@ export type Harness = {
   store: Map<string, unknown>
   /** This session's agents, as $.agent.list() answers: set a status to start or finish one. */
   agents: AgentInfo[]
+  /** The tools the plugin registered, by name. */
+  tools: string[]
 }
 
 /** `stored`: what $.store holds when the session starts (a previous session's save). */
 export const harness = (on: On, stored: Record<string, unknown> = {}): Harness => {
-  const h: Harness = { opened: [], closed: [], status: [], store: new Map(Object.entries(stored)), agents: [] }
+  const h: Harness = { opened: [], closed: [], status: [], store: new Map(Object.entries(stored)), agents: [], tools: [] }
   on('store.get', (_$, e) => ({ value: JSON.parse(JSON.stringify(h.store.get(e.key) ?? null)) ?? undefined }))
   on('store.set', (_$, e) => {
     h.store.set(e.key, JSON.parse(JSON.stringify(e.value)))
@@ -24,7 +26,10 @@ export const harness = (on: On, stored: Record<string, unknown> = {}): Harness =
   const panes = new Map<string, UiPane>()
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
-  on('tool.register', (_$, e) => ({ value: { tool: `mcp__while-you-wait__${e.name}` } }))
+  on('tool.register', (_$, e) => {
+    h.tools.push(e.name)
+    return { value: { tool: `mcp__while-you-wait__${e.name}` } }
+  })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('ui.status', (_$, e) => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { entryAt, erase, layout, moveCursor, newGame, nextPuzzle, select, toggleDir, typeLetter } from '../hooks/games/crossword'
+import { entryAt, erase, layout, moveCursor, newGame, nextPuzzle, toggleDir, typeLetter } from '../hooks/games/crossword'
 import type { PuzzleData } from '../hooks/games/puzzles'
 
 const P: PuzzleData = {
@@ -54,9 +54,8 @@ describe('crossword', () => {
     expect(moveCursor(P, s, 'up').cursor).toBe(5) // turned only
   })
 
-  test('tapping the cursor square toggles direction', () => {
+  test('A toggles the direction where the square has both', () => {
     const s = newGame(P)
-    expect(select(P, s, s.cursor).dir).toBe('down')
     expect(toggleDir(P, s).dir).toBe('down')
     expect(entryAt(P, { cursor: 1, dir: 'down' })?.answer).toBe('HOPPE')
   })

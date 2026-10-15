@@ -1,5 +1,6 @@
-// A key pressed on the LCD -> an arcade input, per screen. Surface-agnostic:
-// the terminal surface in v2 maps its keys through the same table.
+// A key -> an arcade input, per screen, and what the keyboard-mode field's
+// text means as keys. Surface-agnostic: a terminal surface would map its keys
+// through the same table.
 
 import type { Input, Screen } from '../model'
 

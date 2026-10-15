@@ -1,8 +1,7 @@
 // The handheld's screen half, drawn as one SVG: an off-white case, the dark
 // bezel with its WHILE-YOU-WAIT label and power LED, and a 160x144 LCD in the
 // four DMG greens. The controls are real buttons under it (pane.tsx), since
-// the desktop delivers no clicks to a drawing. Pure: state in, `{ svg, hit }`
-// out; `hit` maps a tap on the LCD to a square or a menu row where it can.
+// the desktop delivers no clicks to a drawing. Pure: state in, `{ svg }` out.
 
 import * as Mines from '../games/minesweeper'
 import { entryAt, layout } from '../games/crossword'
@@ -10,11 +9,12 @@ import type { PuzzleData } from '../games/puzzles'
 import type { Live, Save, SessionStats } from '../model'
 import { GAMES, MENU, fmtClock, fmtDuration } from '../model'
 import { GB } from './palette'
-import { DEVICE_H, DEVICE_W, LCD } from './hit'
-import type { HitMap } from './hit'
 import { Typesetter, normalize, textWidth, wrap } from './pixelfont'
 
-export { DEVICE_H, DEVICE_W } from './hit'
+// Device units: the SVG's viewBox. The LCD is the DMG's 160x144.
+export const DEVICE_W = 200
+export const DEVICE_H = 192
+export const LCD = { x: 24, y: 22, w: 160, h: 144 } as const
 
 const CASE = '#d6d2c8'
 const CASE_EDGE = '#b3aea3'
@@ -29,8 +29,6 @@ const rect = (x: number, y: number, w: number, h: number, fill: string, extra = 
 
 const centerX = (s: string, scale = 1, width = LCD.w) => Math.round((width - textWidth(s, scale)) / 2)
 
-type Lcd = { body: string; grid: HitMap['grid']; menu: HitMap['menu']; hasHeader?: boolean }
-
 // ── LCD screens (160x144, LCD units) ────────────────────────────────────
 
 /** `✦2` when agents are working: the count rides along in every screen's header. */
@@ -42,7 +40,7 @@ const header = (t: Typesetter, left: string, right: string) =>
 const statRow = (t: Typesetter, label: string, value: string, y: number, color: string = GB.darkest) =>
   t.text(label, 6, y, color) + t.text(value, 154 - textWidth(value), y, GB.darkest)
 
-const resting = (t: Typesetter, v: DeviceView): Lcd => {
+const resting = (t: Typesetter, v: DeviceView): string => {
   const today = v.session
   let s = ''
   if (v.live.banner === 'done') {
@@ -61,7 +59,7 @@ const resting = (t: Typesetter, v: DeviceView): Lcd => {
   s += statRow(t, 'TOOL CALLS', String(today.toolCalls), 110)
   s += statRow(t, 'FILES EDITED', String(today.filesEdited), 120)
   s += statRow(t, 'BOARDS CLEARED', String(today.boardsCleared), 130, GB.dark)
-  return { body: s, grid: null, menu: null }
+  return s
 }
 
 const ICONS: Record<string, (x: number, y: number) => string> = {
@@ -76,7 +74,7 @@ const ICONS: Record<string, (x: number, y: number) => string> = {
   scores: (x, y) => rect(x + 1, y + 9, 4, 7, GB.dark) + rect(x + 6, y + 4, 4, 12, GB.darkest) + rect(x + 11, y + 1, 4, 15, GB.dark),
 }
 
-const menu = (t: Typesetter, v: DeviceView): Lcd => {
+const menu = (t: Typesetter, v: DeviceView): string => {
   const y0 = 16
   const pitch = 28
   let s = header(t, 'SELECT GAME', v.live.agents > 0 ? `✦${v.live.agents} AGENT${v.live.agents === 1 ? '' : 'S'}` : '')
@@ -90,7 +88,7 @@ const menu = (t: Typesetter, v: DeviceView): Lcd => {
     s += t.text(game?.name ?? 'SCORES', 38, y + 5, GB.darkest)
     s += t.text(game ? (hasSave ? 'CONTINUE ▶' : game.blurb) : 'STATS & BESTS', 38, y + 15, GB.dark)
   })
-  return { body: s, grid: null, menu: { y0, pitch, count: MENU.length } }
+  return s
 }
 
 const tileStyle = (v: number): { bg: string; fg: string; ring?: string } => {
@@ -107,7 +105,7 @@ const overlayBox = (t: Typesetter, lines: string[], y = 54) => {
   return s
 }
 
-const g2048 = (t: Typesetter, v: DeviceView): Lcd => {
+const g2048 = (t: Typesetter, v: DeviceView): string => {
   const g = v.save.g2048!
   const x0 = 17
   const y0 = 15
@@ -128,10 +126,10 @@ const g2048 = (t: Typesetter, v: DeviceView): Lcd => {
     }
   })
   if (g.isOver) s += overlayBox(t, ['NO MOVES LEFT', `SCORE ${g.score}`, 'START = NEW BOARD'])
-  return { body: s, grid: null, menu: null }
+  return s
 }
 
-const mines = (t: Typesetter, v: DeviceView): Lcd => {
+const mines = (t: Typesetter, v: DeviceView): string => {
   const m = v.save.mines!
   const pitch = 14
   const cell = 13
@@ -163,13 +161,13 @@ const mines = (t: Typesetter, v: DeviceView): Lcd => {
   })
   if (m.status === 'won') s += overlayBox(t, ['CLEARED! ✦', `TIME ${fmtClock(Mines.elapsed(m, v.now))}`, 'START = NEW BOARD'])
   if (m.status === 'lost') s += overlayBox(t, ['BOOM!', 'START = NEW BOARD'])
-  return { body: s, grid: { x0, y0, pitchX: pitch, pitchY: pitch, cols: m.w, rows: m.h }, menu: null, hasHeader: true }
+  return s
 }
 
-const crossword = (t: Typesetter, v: DeviceView): Lcd => {
+const crossword = (t: Typesetter, v: DeviceView): string => {
   const c = v.save.crossword
   const p = v.puzzles.find(q => q.id === c?.puzzleId)
-  if (!c || !p) return { body: t.text('NO PUZZLES', 50, 66, GB.darkest), grid: null, menu: null }
+  if (!c || !p) return t.text('NO PUZZLES', 50, 66, GB.darkest)
   const pitch = 21
   const cell = 20
   const x0 = 28
@@ -202,10 +200,10 @@ const crossword = (t: Typesetter, v: DeviceView): Lcd => {
       else s += t.text(line, 4, 115 + i * 9, GB.light)
     })
   }
-  return { body: s, grid: { x0, y0, pitchX: pitch, pitchY: pitch, cols: 5, rows: 5 }, menu: null }
+  return s
 }
 
-const scores = (t: Typesetter, v: DeviceView): Lcd => {
+const scores = (t: Typesetter, v: DeviceView): string => {
   const sc = v.save.scores
   const all = v.session
   let s = header(t, `SCORES${agentsTag(v)}`, 'B = BACK')
@@ -222,10 +220,10 @@ const scores = (t: Typesetter, v: DeviceView): Lcd => {
   s += statRow(t, 'MINES', sc.minesFastestMs[0] !== undefined ? fmtClock(sc.minesFastestMs[0]) : '-', 111, GB.dark)
   s += statRow(t, 'CROSSWORDS', `${sc.crosswordsSolved.length}/${v.puzzles.length}`, 120, GB.dark)
   s += statRow(t, 'BOARDS CLEARED', String(all.boardsCleared), 129, GB.dark)
-  return { body: s, grid: null, menu: null }
+  return s
 }
 
-const screenFor = (t: Typesetter, v: DeviceView): Lcd => {
+const screenFor = (t: Typesetter, v: DeviceView): string => {
   if (v.live.phase === 'idle' && !v.live.testMode) return resting(t, v)
   const { save } = v
   if (save.screen === '2048' && save.g2048) return g2048(t, v)
@@ -248,10 +246,9 @@ const dmgShape = (x: number, y: number, w: number, h: number, r: number, br: num
 
 const ledColor = (live: Live) => (live.phase === 'working' ? '#ff4d5e' : live.phase === 'attention' ? '#ffb000' : '#5b2d36')
 
-export const drawDevice = (v: DeviceView): { svg: string; hit: HitMap } => {
+export const drawDevice = (v: DeviceView): { svg: string } => {
   const t = new Typesetter()
-  const screen = screenFor(t, v)
-  const lcdBody = screen.body + (v.live.phase === 'attention' ? attention(t) : '')
+  const lcdBody = screenFor(t, v) + (v.live.phase === 'attention' ? attention(t) : '')
   const label = 'WHILE-YOU-WAIT'
   const lw = textWidth(label)
   const lx = Math.round((DEVICE_W - lw) / 2)
@@ -279,7 +276,7 @@ export const drawDevice = (v: DeviceView): { svg: string; hit: HitMap } => {
     `<pattern id="dither" width="2" height="2" patternUnits="userSpaceOnUse"><rect width="1" height="1" fill="${GB.darkest}"/><rect x="1" y="1" width="1" height="1" fill="${GB.dark}"/></pattern></defs>` +
     caseLayer + lcdLayer + '</svg>'
 
-  return { svg, hit: { lcd: LCD, grid: screen.grid, menu: screen.menu, hasHeader: screen.hasHeader ?? false } }
+  return { svg }
 }
 
 /** What the screen shows, in words: the Svg's alt text (and what tests read). */

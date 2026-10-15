@@ -1,10 +1,11 @@
 // The arcade pane. On a surface that draws Svg (the desktop) it is the
 // handheld's screen as one crisp SVG, then real buttons under it: the D-pad,
-// B and A, SELECT and START, with hotkeys. (The desktop delivers no clicks to
-// a drawing, so nothing drawn pretends to be a button.) Plain text below uses
-// the app's own colors. Anywhere else it falls back to pane-cells.tsx.
+// B and A, SELECT and START, and the ⌨ keyboard-mode field. (The desktop
+// delivers no clicks or keys to a drawing, so nothing drawn pretends to be a
+// button.) Plain text below uses the app's own colors. Anywhere else it falls
+// back to pane-cells.tsx.
 
-import type { BoxProps, ButtonProps, ClientProps, ElementConstructor, InputProps, RenderElement, SvgProps, TextProps } from 'claude-code'
+import type { BoxProps, ButtonProps, ElementConstructor, InputProps, RenderElement, SvgProps, TextProps } from 'claude-code'
 import { layout } from '../games/crossword'
 import type { Dir, Input } from '../model'
 import { GAMES, MENU, headline, isPlayable, plural } from '../model'
@@ -18,7 +19,6 @@ export type PaneElements = {
   Box: ElementConstructor<BoxProps>
   Text: ElementConstructor<TextProps>
   Button: ElementConstructor<ButtonProps>
-  Client?: ElementConstructor<ClientProps>
   Svg?: ElementConstructor<SvgProps>
   Input?: ElementConstructor<InputProps>
 }
@@ -41,25 +41,17 @@ const KEY_HELP: Record<string, string> = {
 }
 
 export const drawPane = (els: PaneElements, view: PaneView, act: PaneActions): RenderElement => {
-  const { Box, Text, Button, Client, Svg } = els
-  if (!Svg || !view.useClient) return drawCellsPane(els, view, act)
+  const { Box, Text, Button, Svg } = els
+  if (!Svg || !view.handheld) return drawCellsPane(els, view, act)
   const { live, save } = view
-  const { svg, hit } = drawDevice(view)
+  const { svg } = drawDevice(view)
   const session = view.session
   const playable = isPlayable(live)
   const crossword = save.screen === 'crossword' && playable ? view.puzzles.find(p => p.id === save.crossword?.puzzleId) : undefined
 
   return (
     <Box flexDirection="column" alignItems="center">
-      <Box flexDirection="column" alignItems="center">
-        <Svg source={svg} alt={svgAlt(view)} />
-        {Client ? (
-          // Taps on the screen and keys, where the surface delivers them to a Client.
-          <Box position="absolute" top={0} left={0} right={0} bottom={0}>
-            <Client key="pad" module="./pad.tsx" props={{ hit }} width="100%" height="100%" />
-          </Box>
-        ) : null}
-      </Box>
+      <Svg source={svg} alt={svgAlt(view)} />
 
       {live.banner !== null ? (
         <Box marginTop={1}>

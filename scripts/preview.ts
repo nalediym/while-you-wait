@@ -42,7 +42,7 @@ const html = (node: unknown): string => {
   const p = n.props ?? {}
   const kids = html(n.children)
   const st: string[] = []
-  if (n.type === 'Box' || n.type === 'Lcd') {
+  if (n.type === 'Box') {
     st.push('display:flex', `flex-direction:${p.flexDirection ?? 'row'}`)
     if (p.display === 'none') st.push('display:none')
     if (p.position === 'absolute') st.push('position:absolute;inset:0')
@@ -62,7 +62,7 @@ const html = (node: unknown): string => {
     if (p.marginBottom !== undefined) st.push(`margin-bottom:${cell(p.marginBottom, 'y')}`)
     if (p.marginY !== undefined) st.push(`margin-top:${cell(p.marginY, 'y')};margin-bottom:${cell(p.marginY, 'y')}`)
     if (p.borderStyle) st.push(`border:${p.borderStyle === 'bold' ? 3 : 1}px solid ${p.borderColor ?? '#888'}`)
-    return `<div class="${n.type === 'Lcd' ? 'lcd' : ''}" style="${st.join(';')}">${kids}</div>`
+    return `<div style="${st.join(';')}">${kids}</div>`
   }
   if (n.type === 'Svg') return String(p.source ?? '').replace(/width="\d+" height="\d+"/, `width="${cols * 7}"`)
   if (n.type === 'Input') return `<input placeholder="${esc(String(p.placeholder ?? ''))}" style="width:100%;font:12px system-ui;padding:4px 6px;border-radius:6px;border:1px solid #555;background:#1b1b1f;color:#ddd">`
@@ -95,7 +95,6 @@ button{font:12px system-ui;margin:2px;border-radius:6px;border:1px solid #4a4a50
 button.primary{background:#d97757;border-color:#d97757;color:#fff}
 button.plain{background:transparent;border:none;color:#0f380f;padding:0;text-align:left;font:13px/1.25 ui-monospace,Menlo,monospace}
 button sup{opacity:.5;font-size:9px;margin-left:2px}
-.lcd{outline:1px dashed rgba(255,0,0,.35)}
 </style><div class="sheet">${snaps.map(s => `<div class="frame"><h2>${s.name}</h2>${html(s.tree)}</div>`).join('')}</div>`
 writeFileSync(out, page)
 console.log(`${snaps.length} snapshots -> ${out}`)
