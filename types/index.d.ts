@@ -58,6 +58,7 @@ export type Live = {
   banner: Banner
   playedThisTurn: boolean
   testMode: boolean // /games test: playable whatever Claude is doing; this session only
+  keyboardMode: boolean // the ⌨ button: keys typed go to the game; this session only
 }
 
 /** One line of the debug timeline (store key debug-timeline): what happened, and the state after. */

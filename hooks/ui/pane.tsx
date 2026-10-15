@@ -24,19 +24,20 @@ export type PaneElements = {
 }
 
 const HINTS: Record<string, string> = {
-  menu: 'Pick a game, or use the keyboard box: W / S to move, Z or Enter to play.',
-  '2048': 'Click the keyboard box, then W A S D slide the tiles. N deals a new board.',
-  mines: 'Keyboard box: W A S D move, Z or Enter digs, X flags. FLAG makes A plant flags.',
-  crossword: 'Type into the box. A (or Enter) switches across/down, Backspace or B erases.',
+  menu: 'Pick a game. ⌨ Use keyboard lets you play with W A S D.',
+  '2048': 'Slide the tiles with the D-pad, or ⌨ Use keyboard for W A S D. START deals a new board.',
+  mines: 'D-pad moves, A digs, B flags. FLAG makes A plant flags. ⌨ for keys.',
+  crossword: 'Turn on ⌨ Use keyboard to type the answers. A switches across/down, B erases.',
   scores: 'B or SELECT goes back.',
 }
 
-const BOX_PLACEHOLDER: Record<string, string> = {
-  menu: 'Click here: W / S move · Z or Enter plays',
-  '2048': 'Click here: W A S D move · N = new board',
-  mines: 'Click here: W A S D move · Z dig · X flag',
-  crossword: 'Click here and type the answers',
-  scores: 'Click here: X goes back',
+/** What the keys do in keyboard mode, per screen. */
+const KEY_HELP: Record<string, string> = {
+  menu: 'W / S move · Z or Enter plays',
+  '2048': 'W A S D slide · N = new board',
+  mines: 'W A S D move · Z digs · X flags',
+  crossword: 'Type letters · Enter switches ↔↕ · Backspace erases',
+  scores: 'X goes back',
 }
 
 export const drawPane = (els: PaneElements, view: PaneView, act: PaneActions): RenderElement => {
@@ -155,16 +156,25 @@ const drawControls = ({ Box, Button, Input }: PaneElements, view: PaneView, act:
         </Box>
       ) : null}
       {Input ? (
-        // The desktop gives a pane's buttons no keys, but it types into a box: so the keys live here.
-        <Box marginBottom={1} width="100%">
-          <Input
-            key="keys"
-            label={screen === 'crossword' ? 'Type letters' : 'Keyboard'}
-            placeholder={BOX_PLACEHOLDER[screen] ?? 'Click here to use the keyboard'}
-            value=""
-            onInput={value => act.typed(value)}
-            onSubmit={value => act.entered(value)}
-          />
+        <Box flexDirection="column" alignItems="center" marginBottom={1} width="100%">
+          <Button key="keyboard-mode" variant={view.live.keyboardMode ? 'primary' : 'secondary'} onPress={act.toggleKeyboard}>
+            {view.live.keyboardMode ? '⌨ Keyboard on' : '⌨ Use keyboard'}
+          </Button>
+          {view.live.keyboardMode ? (
+            // The desktop sends a pane's keys only into a text field, so keyboard mode is one,
+            // focused for you: what you type there is read as game keys.
+            <Box marginTop={1} width="100%">
+              <Input
+                key="keys"
+                label="Keys"
+                placeholder={`${KEY_HELP[screen] ?? 'Keys go here'} (click here if keys stop)`}
+                value=""
+                autoFocus
+                onInput={value => act.typed(value)}
+                onSubmit={value => act.entered(value)}
+              />
+            </Box>
+          ) : null}
         </Box>
       ) : null}
       <Box flexDirection="row" justifyContent="space-between" alignItems="center" width="100%" paddingX={2}>

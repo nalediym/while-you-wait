@@ -35,9 +35,11 @@ export type PaneView = {
 export type PaneActions = {
   send: (input: Input) => void
   jumpBack: () => void
-  /** The keyboard box changed (a key typed or erased), or Enter was pressed in it. */
+  /** The keyboard field changed (a key typed or erased), or Enter was pressed in it. */
   typed: (value: string) => void
   entered: (value: string) => void
+  /** The ⌨ button: keyboard mode on or off. */
+  toggleKeyboard: () => void
 }
 
 export const drawCellsPane = (els: PaneElements, view: PaneView, act: PaneActions): RenderElement => {

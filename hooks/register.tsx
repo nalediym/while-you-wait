@@ -24,7 +24,7 @@ const sessionRef = { plugin: 'while-you-wait', key: 'session' } as const
 const CLICK_LOG_KEY = 'click-log' // the last screen taps, raw, for diagnosing taps that land wrong
 const TRACE_KEY = 'debug-timeline' // the last events and the state after each: what the self-test reads
 const AGENT_POLL_MS = 3_000
-export const BUILD = '0.3.2' // keep in step with plugin.json; the timeline records which build loaded
+export const BUILD = '0.3.3' // keep in step with plugin.json; the timeline records which build loaded
 const DEBUG_TOOL = 'mcp__while-you-wait__debug'
 const lcdRef = { plugin: 'while-you-wait', key: 'lcd' } as const
 
@@ -148,6 +148,15 @@ const typedInBox = async ($: EngineInterface, value: string, isEnter: boolean) =
     boxText = ''
     await send($, { kind: 'a' })
   }
+}
+
+/** The ⌨ button. Turning it on moves the keyboard into the keys field, and logs whether that took. */
+const toggleKeyboard = async ($: EngineInterface) => {
+  const { after } = await setLive($, l => ({ ...l, keyboardMode: !l.keyboardMode }))
+  boxText = ''
+  if (!after.live.keyboardMode) return trace($, 'keyboard-mode off')
+  const focused = await $.ui.focus({ requestId: PANE, key: 'keys' }).catch((err: unknown) => ({ deny: `threw: ${String(err)}` }))
+  await trace($, 'keyboard-mode on', focused.deny ? `focus refused: ${focused.deny}` : 'focus moved to the keys field')
 }
 
 /** One input from a key, a tap or a button. Ignored unless Claude is working. */
@@ -372,6 +381,7 @@ export const register: Register = on => {
         jumpBack: () => void $.ui.close({ id: PANE }),
         typed: value => void typedInBox($, value, false),
         entered: value => void typedInBox($, value, true),
+        toggleKeyboard: () => void toggleKeyboard($),
       },
     )
   })

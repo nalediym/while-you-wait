@@ -35,13 +35,18 @@ real 160×144 LCD in the four DMG greens, with a hand-made 5×7 pixel font.
 
 | Game | Controls |
 | --- | --- |
-| **2048** | Arrow keys / WASD, or click the drawn D-pad. START deals a new board. |
-| **Minesweeper**: 9×9 with 10 mines, and your first dig is always safe | Click a square to dig, right-click to flag. Click **FLAG** at the top to make clicks plant flags. With the keyboard: arrows to move, Enter/Z to dig, X/F to flag. |
-| **Mini crossword**: 30 original 5×5 puzzles | Click a square and type. Enter switches across/down, Backspace erases. All the clues are listed under the handheld. Puzzles you've solved are tracked. |
+| **2048** | The D-pad slides the tiles (W A S D in keyboard mode). START deals a new board. |
+| **Minesweeper**: 9×9 with 10 mines, and your first dig is always safe | The D-pad moves, A digs, B flags. **FLAG** makes A plant flags. In keyboard mode: W A S D, Z digs, X flags. |
+| **Mini crossword**: 30 original 5×5 puzzles | Turn on keyboard mode and type. A or Enter switches across/down, B or Backspace erases. All the clues are listed under the handheld. Puzzles you've solved are tracked. |
 
-Everything on the handheld can be clicked: the screen, D-pad, A, B, SELECT
-(back to the menu) and START (new game). Click it once and it also takes your
-keyboard; Esc returns you to the prompt.
+The buttons under the screen are real buttons: the D-pad, B, A, SELECT (back to
+the menu) and START (new game). **⌨ Use keyboard** turns on keyboard mode, so
+W A S D, Z (= A), X (= B) and N (new game) play the game. The desktop app only
+sends a plugin's keys into a text field, so keyboard mode is a small field
+that's focused for you. Arrow keys can't work there.
+
+**`/games test`** turns on test mode: the arcade is playable anytime in that
+session, whatever Claude is doing. Run it again to turn it off.
 
 ### Stats that make you feel productive, not addicted
 

@@ -39,7 +39,7 @@ export const freshSession = (): SessionStats => ({
 })
 
 export const freshLive = (): Live => ({
-  phase: 'idle', turnId: null, isTurnRunning: false, agents: 0, busySince: null, offeredFor: null, banner: null, playedThisTurn: false, testMode: false,
+  phase: 'idle', turnId: null, isTurnRunning: false, agents: 0, busySince: null, offeredFor: null, banner: null, playedThisTurn: false, testMode: false, keyboardMode: false,
 })
 
 /** Playable while Claude works, or anytime in test mode. */
