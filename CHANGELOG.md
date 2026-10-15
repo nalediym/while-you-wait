@@ -2,6 +2,13 @@
 
 Installed copies update when `version` in `.claude-plugin/plugin.json` changes.
 
+## 0.3.8 (2026-10-15)
+
+- **Added** a *Try /games test* hint on the resting screen, so a first-timer
+  can play right away. It goes away once you've opened a game.
+- **Docs:** a demo loop in the README, a social preview image, and desktop
+  install steps that work.
+
 ## 0.3.7 (2026-10-15)
 
 - **Removed** the invisible click layer over the screen, and everything that
@@ -13,8 +20,6 @@ Installed copies update when `version` in `.claude-plugin/plugin.json` changes.
   nothing extra is written to the store.
 - **Added** `scripts/check.sh` (every check in one go), CI, `CONTRIBUTING.md`
   and this changelog.
-- **Added** a *Try /games test* hint on the resting screen, so a first-timer
-  can play right away. It goes away once you've opened a game.
 
 ## 0.3.6
 

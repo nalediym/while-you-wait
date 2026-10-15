@@ -22,7 +22,7 @@ const saveRef = { plugin: 'while-you-wait', key: 'save' } as const
 const sessionRef = { plugin: 'while-you-wait', key: 'session' } as const
 const TRACE_KEY = 'debug-timeline' // the last events and the state after each: what the debug tool reads
 const AGENT_POLL_MS = 3_000
-export const BUILD = '0.3.7' // keep in step with plugin.json (scripts/check.sh checks); the timeline records which build loaded
+export const BUILD = '0.3.8' // keep in step with plugin.json (scripts/check.sh checks); the timeline records which build loaded
 const DEBUG_TOOL = 'mcp__while-you-wait__debug'
 
 /** The `devTools` option (plugin.json userConfig): the event timeline and the debug tool. Off for players. */
