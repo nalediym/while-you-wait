@@ -78,8 +78,18 @@ From a Claude Code terminal session:
 
 Answer `y` to add the marketplace, then pick a scope (user is the first option).
 
-**Claude desktop app:** click **+ → Plugins → Add marketplace**, enter
-`nalediym/while-you-wait`, then install **while-you-wait**.
+**Claude desktop app:** `/plugin` doesn't run in the Code tab, and the app's
+plugin browser only lists marketplaces you've already added. So run this once
+in your shell:
+
+```bash
+claude plugin install while-you-wait --marketplace nalediym/while-you-wait
+```
+
+It installs for your user account, so new desktop sessions load it. To pick
+the scope in the app instead, run
+`claude plugin marketplace add nalediym/while-you-wait`, then in a Code tab
+session click **+ → Plugins → Add plugin** and select **while-you-wait**.
 
 v1 draws for the **desktop app** (`desktop` surface). Terminal support is on the roadmap.
 
