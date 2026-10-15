@@ -1,315 +1,101 @@
-// The arcade pane as a tree: bezel, banner, LCD, controls. Pure drawing from
-// the model; every press goes out through `act`. The only surface-specific
-// part is the LCD's `Client` (desktop); without one the same grid is drawn
-// as plain Boxes, which is the seam for a terminal surface in v2.
+// The arcade pane. On a surface that draws Svg (the desktop) it is the
+// handheld: one crisp SVG, an invisible input pad laid over it, and a few
+// lines of plain text below in the app's own colors. Anywhere else it falls
+// back to the Box-and-Button drawing in pane-cells.tsx.
 
-import type { BoxProps, ButtonProps, ClientProps, ElementConstructor, RenderElement, TextProps } from 'claude-code'
-import * as G2048 from '../games/g2048'
-import * as Mines from '../games/minesweeper'
-import { entryAt, layout } from '../games/crossword'
-import type { PuzzleData } from '../games/puzzles'
-import type { Input, Live, Save, Tally } from '../model'
-import { GAMES, MENU, fmtClock, fmtDuration, headline, plural } from '../model'
-import { drawGrid } from './draw-grid'
-import type { Grid } from './grid'
-import { grid2048, gridCrossword, gridMines } from './grid'
-import { GB } from './palette'
+import type { BoxProps, ButtonProps, ClientProps, ElementConstructor, RenderElement, SvgProps, TextProps } from 'claude-code'
+import { layout } from '../games/crossword'
+import { fmtDuration, headline, plural } from '../model'
+import { drawDevice, svgAlt } from './device'
+import { drawCellsPane } from './pane-cells'
+import type { PaneActions, PaneView } from './pane-cells'
+
+export type { PaneActions, PaneView } from './pane-cells'
 
 export type PaneElements = {
   Box: ElementConstructor<BoxProps>
   Text: ElementConstructor<TextProps>
   Button: ElementConstructor<ButtonProps>
   Client?: ElementConstructor<ClientProps>
+  Svg?: ElementConstructor<SvgProps>
 }
 
-export type PaneView = {
-  save: Save
-  live: Live
-  now: number
-  puzzles: readonly PuzzleData[]
-  /** Draw the LCD as a Client (keys + taps) rather than plain Boxes. */
-  useClient: boolean
+const HINTS: Record<string, string> = {
+  menu: 'Click a game, or click the Game Boy and use ↑ ↓ and Enter.',
+  '2048': 'Arrows or WASD slide the tiles. START deals a new board.',
+  mines: 'Click to dig, right-click (or B) to flag. Click FLAG to make clicks flag.',
+  crossword: 'Click a square and type. Enter switches across/down, Backspace erases.',
+  scores: 'B or SELECT goes back.',
 }
-
-export type PaneActions = { send: (input: Input) => void; jumpBack: () => void }
 
 export const drawPane = (els: PaneElements, view: PaneView, act: PaneActions): RenderElement => {
-  const { Box, Text, Button } = els
+  const { Box, Text, Button, Client, Svg } = els
+  if (!Svg || !Client || !view.useClient) return drawCellsPane(els, view, act)
   const { live, save } = view
-  const isWorking = live.phase === 'working'
-
-  const banner =
-    live.banner === null ? null : (
-      <Box flexDirection="column" backgroundColor={GB.darkest} paddingX={1} marginBottom={1}>
-        <Text color={GB.lightest} bold>
-          {live.banner === 'done' ? "✓ CLAUDE'S DONE" : '! CLAUDE NEEDS YOU'}
-        </Text>
-        <Text color={GB.light} wrap="wrap">{live.banner === 'done' ? 'Game saved exactly where you left it.' : 'Game paused & saved. Go answer Claude.'}</Text>
-        <Button key="jump-back" variant="primary" onPress={act.jumpBack}>
-          ↩ Back to Claude
-        </Button>
-      </Box>
-    )
-
-  let body: RenderElement
-  if (live.phase === 'idle') body = drawResting(els, save.stats.today, save.stats.allTime, view)
-  else if (live.phase === 'attention') body = drawPaused(els, view)
-  else body = drawScreen(els, view, act)
+  const { svg, hit } = drawDevice(view)
+  const today = save.stats.today
+  const all = save.stats.allTime
+  const crossword = save.screen === 'crossword' && live.phase === 'working' ? view.puzzles.find(p => p.id === save.crossword?.puzzleId) : undefined
 
   return (
-    <Box flexDirection="column" backgroundColor={GB.dark} padding={1}>
-      <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
-        <Text color={GB.lightest} bold>
-          ◆ WHILE-YOU-WAIT
-        </Text>
-        <Text color={isWorking ? GB.lightest : GB.light}>{isWorking ? '● CLAUDE WORKING' : live.phase === 'attention' ? '◐ WAITING ON YOU' : '○ RESTING'}</Text>
-      </Box>
-      {banner}
-      <Box flexDirection="column" backgroundColor={GB.lightest} borderStyle="bold" borderColor={GB.darkest} paddingX={1}>
-        {body}
-      </Box>
-      {isWorking && save.screen !== 'scores' ? drawControls(els, view, act) : null}
-      <Text color={GB.light} wrap="wrap">
-        {isWorking ? 'Click the screen, then use the keys. Esc → prompt.' : 'Playable only while Claude works.'}
-      </Text>
-    </Box>
-  )
-}
-
-// ── Screens ─────────────────────────────────────────────────────────────
-
-const drawScreen = (els: PaneElements, view: PaneView, act: PaneActions): RenderElement => {
-  const { Box, Text, Button } = els
-  const { save } = view
-  switch (save.screen) {
-    case 'menu':
-      return (
-        <Box flexDirection="column" paddingY={1}>
-          <Text color={GB.darkest} bold>
-            SELECT GAME
-          </Text>
-          {MENU.map((screen, i) => {
-            const game = GAMES.find(g => g.id === screen)
-            const isCursor = i === save.menuCursor
-            const hasSave = (screen === '2048' && save.g2048) || (screen === 'mines' && save.mines) || (screen === 'crossword' && save.crossword)
-            return (
-              <Button key={`open-${screen}`} plain onPress={() => act.send({ kind: 'open', screen })}>
-                {isCursor ? '▶ ' : '  '}
-                {game?.name ?? 'SCORES'} <Text dimColor>{game ? (hasSave ? 'continue' : game.blurb) : 'stats & bests'}</Text>
-              </Button>
-            )
-          })}
+    <Box flexDirection="column" alignItems="center">
+      <Box flexDirection="column" alignItems="center">
+        <Svg source={svg} alt={svgAlt(view)} />
+        <Box position="absolute" top={0} left={0} right={0} bottom={0}>
+          <Client key="pad" module="./pad.tsx" props={{ hit }} width="100%" height="100%" />
         </Box>
-      )
-    case 'scores':
-      return (
-        <Box flexDirection="column" paddingY={1}>
-          {drawStats(els, save.stats.today, save.stats.allTime, view)}
-          <Button key="back" onPress={() => act.send({ kind: 'select' })}>
-            ◀ Back
+      </Box>
+
+      {live.banner !== null ? (
+        <Box marginTop={1}>
+          <Button key="jump-back" variant="primary" onPress={act.jumpBack}>
+            {live.banner === 'done' ? "↩ Claude's done: back to Claude" : '↩ Claude needs you: go answer'}
           </Button>
         </Box>
-      )
-    case '2048': {
-      const g = save.g2048
-      if (!g) return <Text color={GB.darkest}>…</Text>
-      const status = g.isOver ? 'NO MOVES — START for a new board' : g.hasWon ? '2048! Keep going?' : ''
-      return (
-        <Box flexDirection="column" paddingY={1}>
-          <Text color={GB.darkest} bold>
-            2048 <Text color={GB.dark}>SCORE {g.score} · BEST {Math.max(save.scores.best2048Score, g.score)}</Text>
-          </Text>
-          {drawLcd(els, view, 'lcd-2048', grid2048(g))}
-          {status ? <Text color={GB.darkest} bold wrap="wrap">{status}</Text> : null}
-        </Box>
-      )
-    }
-    case 'mines': {
-      const m = save.mines
-      if (!m) return <Text color={GB.darkest}>…</Text>
-      const status =
-        m.status === 'won' ? `CLEARED in ${fmtClock(Mines.elapsed(m, view.now))}!` : m.status === 'lost' ? 'BOOM. START for a new board.' : m.status === 'ready' ? 'Tap any square — the first is always safe.' : ''
-      return (
-        <Box flexDirection="column" paddingY={1}>
-          <Box flexDirection="row" justifyContent="space-between">
-            <Text color={GB.darkest} bold>
-              MINES <Text color={GB.dark}>▲{Mines.flagsLeft(m)} · {fmtClock(Mines.elapsed(m, view.now))}</Text>
-            </Text>
-            <Button key="flag-mode" plain onPress={() => act.send({ kind: 'flagMode' })}>
-              FLAG {save.flagMode ? 'ON' : 'OFF'}
-            </Button>
-          </Box>
-          {drawLcd(els, view, 'lcd-mines', gridMines(m, false))}
-          {status ? <Text color={GB.darkest} bold wrap="wrap">{status}</Text> : null}
-        </Box>
-      )
-    }
-    case 'crossword': {
-      const c = save.crossword
-      const p = view.puzzles.find(q => q.id === c?.puzzleId)
-      if (!c || !p) return <Text color={GB.darkest}>No puzzles bundled.</Text>
-      const entry = entryAt(p, c)
-      const clue = entry ? p.clues[entry.dir][String(entry.num)] : undefined
-      const solved = view.save.scores.crosswordsSolved.length
-      return (
-        <Box flexDirection="column" paddingY={1}>
-          <Text color={GB.darkest} bold>
-            {p.title.toUpperCase()} <Text color={GB.dark}>{solved}/{view.puzzles.length} solved</Text>
-          </Text>
-          {drawLcd(els, view, 'lcd-crossword', gridCrossword(p, c, false))}
-          {c.isSolved ? (
-            <Box flexDirection="column">
-              <Text color={GB.darkest} bold>SOLVED! ✦</Text>
-              <Button key="next-puzzle" onPress={() => act.send({ kind: 'nextPuzzle' })}>
-                Next puzzle ▶
-              </Button>
-            </Box>
-          ) : entry ? (
-            <Text color={GB.darkest} bold wrap="wrap">
-              {entry.num}
-              {entry.dir === 'across' ? 'A' : 'D'} {clue ?? ''}
-            </Text>
-          ) : null}
-          {drawClueList(els, p)}
-        </Box>
-      )
-    }
-  }
-}
+      ) : null}
 
-const drawClueList = ({ Box, Text }: PaneElements, p: PuzzleData): RenderElement => {
-  const { entries } = layout(p)
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      {(['across', 'down'] as const).map(dir => (
-        <Box flexDirection="column">
-          <Text color={GB.dark} bold>
-            {dir.toUpperCase()}
+      <Box flexDirection="column" marginTop={1} width="100%">
+        {live.phase === 'idle' ? (
+          <Box flexDirection="column">
+            <Text bold wrap="wrap">
+              {headline(today)}
+            </Text>
+            <Text dimColor wrap="wrap">
+              {`All-time: ${plural(all.turns, 'task')}, ${fmtDuration(all.workMs)} of Claude's work, ${plural(all.turnsWhileWaited, 'task')} finished while you waited.`}
+            </Text>
+            <Text dimColor wrap="wrap">
+              The arcade unlocks while Claude is working.
+            </Text>
+          </Box>
+        ) : live.phase === 'attention' ? (
+          <Text dimColor wrap="wrap">
+            Your game is saved exactly where you left it.
           </Text>
-          {entries
-            .filter(e => e.dir === dir)
-            .map(e => (
-              <Text color={GB.dark} wrap="wrap">
-                {String(e.num).padStart(2)} {p.clues[dir][String(e.num)] ?? ''}
-              </Text>
+        ) : (
+          <Text dimColor wrap="wrap">
+            {HINTS[save.screen] ?? ''}
+          </Text>
+        )}
+        {crossword ? (
+          <Box flexDirection="column" marginTop={1}>
+            <Text bold>{crossword.title}</Text>
+            {(['across', 'down'] as const).map(dir => (
+              <Box flexDirection="column" marginTop={1}>
+                <Text dimColor bold>
+                  {dir.toUpperCase()}
+                </Text>
+                {layout(crossword)
+                  .entries.filter(e => e.dir === dir)
+                  .map(e => (
+                    <Text wrap="wrap">
+                      {`${String(e.num).padStart(2)}  ${crossword.clues[dir][String(e.num)] ?? ''}`}
+                    </Text>
+                  ))}
+              </Box>
             ))}
-        </Box>
-      ))}
-    </Box>
-  )
-}
-
-const drawLcd = (els: PaneElements, view: PaneView, key: string, grid: Grid): RenderElement => {
-  const { Box, Client } = els
-  return (
-    <Box marginY={1} flexDirection="row">
-      {view.useClient && Client ? <Client key={key} module="./screen.tsx" props={{ grid }} /> : drawGrid(els, grid)}
-    </Box>
-  )
-}
-
-const drawPaused = (els: PaneElements, view: PaneView): RenderElement => {
-  const { Box, Text } = els
-  const { save } = view
-  const game = GAMES.find(g => g.id === save.screen)
-  return (
-    <Box flexDirection="column" paddingY={1}>
-      <Text color={GB.darkest} bold>
-        ❚❚ PAUSED
-      </Text>
-      <Text color={GB.dark} wrap="wrap">{game ? `${game.name} is frozen exactly as you left it.` : 'Nothing running.'}</Text>
-    </Box>
-  )
-}
-
-const drawResting = (els: PaneElements, today: Tally, allTime: Tally, view: PaneView): RenderElement => {
-  const { Box, Text } = els
-  return (
-    <Box flexDirection="column" paddingY={1}>
-      <Text color={GB.darkest} bold>
-        CLAUDE'S RESTING
-      </Text>
-      <Text color={GB.dark} wrap="wrap">— go ship something. ✦</Text>
-      <Box marginTop={1} flexDirection="column">
-        {drawStats(els, today, allTime, view)}
-      </Box>
-    </Box>
-  )
-}
-
-// Work stats first and loud; game stats after and quiet.
-const drawStats = ({ Box, Text }: PaneElements, today: Tally, allTime: Tally, view: PaneView): RenderElement => {
-  const sc = view.save.scores
-  const work = (t: Tally) =>
-    `${plural(t.turns, 'task')} · ${fmtDuration(t.workMs)} of work · ${plural(t.toolCalls, 'tool call')} · ${plural(t.filesEdited, 'file')} edited`
-  return (
-    <Box flexDirection="column">
-      <Text color={GB.darkest} bold wrap="wrap">
-        {headline(today)}
-      </Text>
-      <Text color={GB.darkest} bold>
-        TODAY
-      </Text>
-      <Text color={GB.darkest} wrap="wrap">
-        {work(today)}
-      </Text>
-      <Text color={GB.darkest} bold>
-        ALL-TIME
-      </Text>
-      <Text color={GB.darkest} wrap="wrap">
-        {work(allTime)}
-      </Text>
-      <Text color={GB.dark} wrap="wrap">
-        {`Claude finished ${plural(allTime.turnsWhileWaited, 'task')} while you waited.`}
-      </Text>
-      <Box marginTop={1} flexDirection="column">
-        <Text color={GB.dark}>BESTS</Text>
-        <Text color={GB.dark} wrap="wrap">
-          {`2048 tile ${sc.best2048Tile || '—'} · score ${sc.best2048Score || '—'}`}
-        </Text>
-        <Text color={GB.dark} wrap="wrap">
-          {`Mines ${sc.minesFastestMs.length ? sc.minesFastestMs.slice(0, 3).map(fmtClock).join(' / ') : '—'}`}
-        </Text>
-        <Text color={GB.dark} wrap="wrap">
-          {`Crosswords ${sc.crosswordsSolved.length}/${view.puzzles.length} · boards today ${today.boardsCleared}`}
-        </Text>
-      </Box>
-    </Box>
-  )
-}
-
-// ── Controls: a D-pad, A/B, SELECT/START ─────────────────────────────────
-
-const drawControls = ({ Box, Button, Text }: PaneElements, view: PaneView, act: PaneActions): RenderElement => {
-  const screen = view.save.screen
-  // Letters type into the crossword, so its buttons take no letter hotkeys.
-  const letters = screen !== 'crossword'
-  const pad = (dir: 'up' | 'down' | 'left' | 'right', glyph: string, hotkey: string) => (
-    <Button key={`pad-${dir}`} label={glyph} {...(letters ? { hotkey } : {})} onPress={() => act.send({ kind: 'dir', dir })} />
-  )
-  const aLabel = screen === 'mines' ? 'A dig' : screen === 'crossword' ? 'A ↔↕' : 'A'
-  const bLabel = screen === 'mines' ? 'B flag' : screen === 'crossword' ? 'B del' : 'B'
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Box flexDirection="row" justifyContent="space-between" alignItems="center">
-        <Box flexDirection="column" alignItems="center">
-          {pad('up', '▲', 'w')}
-          <Box flexDirection="row" columnGap={1}>
-            {pad('left', '◀', 'a')}
-            {pad('right', '▶', 'd')}
           </Box>
-          {pad('down', '▼', 's')}
-        </Box>
-        <Box flexDirection="row" columnGap={1}>
-          <Button key="btn-b" label={bLabel} {...(letters ? { hotkey: 'x' } : {})} onPress={() => act.send({ kind: 'b' })} />
-          <Button key="btn-a" label={aLabel} variant="primary" {...(letters ? { hotkey: 'z' } : {})} onPress={() => act.send({ kind: 'a' })} />
-        </Box>
+        ) : null}
       </Box>
-      <Box flexDirection="row" justifyContent="center" columnGap={2} marginTop={1}>
-        <Button key="btn-select" label="SELECT" plain onPress={() => act.send({ kind: 'select' })} />
-        <Button key="btn-start" label="START" plain onPress={() => act.send({ kind: 'start' })} />
-      </Box>
-      <Text color={GB.light} wrap="wrap">{screen === 'menu' ? 'SELECT menu · START play' : 'SELECT menu · START new game'}</Text>
     </Box>
   )
 }

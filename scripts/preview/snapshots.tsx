@@ -13,6 +13,7 @@ const inline = async (ui: { drawn: (s?: { in: string }) => Promise<unknown> }, n
   if (Array.isArray(node)) return Promise.all(node.map(n => inline(ui, n)))
   if (typeof node !== 'object' || node === null) return node
   const n = node as { type?: string; props?: { key?: string }; children?: unknown }
+  if (n.type === 'Client' && n.props?.key === 'pad') return null // invisible input layer
   if (n.type === 'Client' && n.props?.key) return { type: 'Lcd', children: [await inline(ui, await ui.drawn({ in: n.props.key }))] }
   return { ...n, children: await inline(ui, n.children) }
 }
@@ -34,24 +35,25 @@ test('snapshots', { timeoutMs: 20_000 }, async ($: Engine, on) => {
   })
   const snap = async (name: string) => console.log(`@@SNAP ${name} ${JSON.stringify(await inline(ui, await ui.drawn()))}`)
 
+  const press = (press: unknown, button = 'left') => ui.post({ type: 'press', press, button } as never, { in: 'pad' })
+  const key = (k: string) => ui.key({ key: k, in: 'pad' })
+
   await snap('resting')
   await $.turn.start({ text: 'go', turnId: 't1' })
   await snap('menu')
-  await ui.press({ key: 'open-2048' })
-  for (const key of ['left', 'up', 'left', 'down', 'right', 'up', 'left', 'left', 'up', 'down', 'left', 'up']) await ui.key({ key, in: 'lcd-2048' })
+  await press({ kind: 'row', index: 0 })
+  for (const k of ['left', 'up', 'left', 'down', 'right', 'up', 'left', 'left', 'up', 'down', 'left', 'up']) await key(k)
   await snap('2048')
-  await ui.press({ key: 'btn-select' })
-  await ui.press({ key: 'open-mines' })
-  await ui.press({ key: 'btn-a' })
-  await ui.key({ key: 'right', in: 'lcd-mines' })
-  await ui.key({ key: 'right', in: 'lcd-mines' })
-  await ui.key({ key: 'f', in: 'lcd-mines' })
+  await press({ kind: 'select' })
+  await press({ kind: 'row', index: 1 })
+  await press({ kind: 'cell', col: 4, row: 4 })
+  await press({ kind: 'header' })
   await clock.advance(42_000)
-  await ui.key({ key: 'up', in: 'lcd-mines' })
+  await key('up')
   await snap('mines')
-  await ui.press({ key: 'btn-select' })
-  await ui.press({ key: 'open-crossword' })
-  for (const key of ['s', 'h', 'o']) await ui.key({ key, in: 'lcd-crossword' })
+  await press({ kind: 'select' })
+  await press({ kind: 'row', index: 2 })
+  for (const k of ['s', 'h', 'o']) await key(k)
   await snap('crossword')
   await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: {} } as never)
   await snap('needs-you')

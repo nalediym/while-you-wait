@@ -4,19 +4,15 @@ A tiny Game Boy–style arcade that lives in a side pane of Claude Code, and is
 **only playable while Claude is working**. Play a quick game while Claude runs a
 long task, and leave your phone alone.
 
-```
-◆ WHILE-YOU-WAIT          ● CLAUDE WORKING
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ 2048  SCORE 1840 · BEST 6140         ┃
-┃ ┌────┬────┬────┬────┐                ┃
-┃ │  8 │  2 │  · │  · │                ┃
-┃ │ 64 │ 16 │  4 │  · │                ┃
-┃ └────┴────┴────┴────┘                ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-   ▲
- ◀   ▶          (B) (A)
-   ▼        SELECT  START
-```
+<p>
+  <img src="docs/2048.svg" width="230" alt="The handheld playing 2048">
+  <img src="docs/mines.svg" width="230" alt="The handheld playing Minesweeper">
+  <img src="docs/crossword.svg" width="230" alt="The handheld playing a mini crossword">
+  <img src="docs/resting.svg" width="230" alt="The handheld locked: Claude's resting, with today's stats">
+</p>
+
+These images are drawn by the plugin's own code (`hooks/ui/device.ts`). It's a
+real 160×144 LCD in the four DMG greens, with a hand-made 5×7 pixel font.
 
 ## How it works
 
@@ -35,12 +31,13 @@ long task, and leave your phone alone.
 
 | Game | Controls |
 | --- | --- |
-| **2048** | Arrow keys / WASD, or the on-screen D-pad. START deals a new board. |
-| **Minesweeper**: 9×9 with 10 mines, and your first dig is always safe | Click to dig, right-click to flag. The **FLAG** toggle makes clicks flag. With the keyboard: D-pad to move, A to dig, B to flag. |
-| **Mini crossword**: 30 original 5×5 puzzles | Click a square, type letters, Backspace to erase. Enter (or A) switches across/down. Puzzles you've solved are tracked. |
+| **2048** | Arrow keys / WASD, or click the drawn D-pad. START deals a new board. |
+| **Minesweeper**: 9×9 with 10 mines, and your first dig is always safe | Click a square to dig, right-click to flag. Click **FLAG** at the top to make clicks plant flags. With the keyboard: arrows to move, Enter/Z to dig, X/F to flag. |
+| **Mini crossword**: 30 original 5×5 puzzles | Click a square and type. Enter switches across/down, Backspace erases. All the clues are listed under the handheld. Puzzles you've solved are tracked. |
 
-Click the game screen first so it receives your key presses. Esc takes you back
-to the prompt.
+Everything on the handheld can be clicked: the screen, D-pad, A, B, SELECT
+(back to the menu) and START (new game). Click it once and it also takes your
+keyboard; Esc returns you to the prompt.
 
 ### Stats that make you feel productive, not addicted
 
@@ -78,15 +75,18 @@ hooks/register.tsx              event wiring: turns, tools, attention, /games, t
 hooks/model.ts                  pure model: save data, stats, one input -> next state
 hooks/games/                    pure game logic (2048, minesweeper, crossword, rng)
 hooks/games/puzzles.ts          GENERATED from data/crosswords.json
-hooks/ui/                       drawing: pane tree, grid builders, the desktop LCD Client
+hooks/ui/device.ts              the handheld as one SVG (pure: state in, svg + hit map out)
+hooks/ui/pixelfont.ts           the 5x7 / 3x5 pixel fonts
+hooks/ui/pad.tsx, hit.ts        the invisible input layer over the drawing
+hooks/ui/pane*.tsx              the pane (handheld + text); a plain fallback for surfaces without Svg
 types/index.d.ts                every $.state value the mod keeps
 tests/                          unit tests + a desktop pane test of the whole loop
 scripts/                        dev tools (below)
 ```
 
-Rendering stays in `hooks/ui/`. `grid.ts` turns game state into plain cells,
-and only `pane.tsx` and `screen.tsx` know about surfaces, so adding a terminal
-surface is a contained change.
+Rendering stays in `hooks/ui/`. `device.ts` turns state into an SVG plus a hit
+map, and `pane-cells.tsx` is a plain Box drawing for surfaces without `Svg`.
+That plain drawing is where a terminal surface would start.
 
 ```bash
 claude plugin validate .
@@ -107,8 +107,12 @@ claude --plugin-dir .
 Dev tools in `scripts/`:
 
 - `typecheck.sh`: copies this machine's `claude-code.d.ts` into place and runs `tsc`.
-- `preview.ts`: drives the pane through every state and renders an HTML contact
-  sheet (`bun scripts/preview.ts --out .preview/index.html`).
+- `preview/devices.ts`: renders the handheld for every screen into one page, straight
+  from the drawing code (`bun scripts/preview/devices.ts .preview/index.html`).
+  The SVG draws the same in a browser as in the app.
+- `preview.ts`: drives the whole pane through the engine and renders an HTML
+  contact sheet (`bun scripts/preview.ts --out .preview/pane.html`).
+- `preview/readme-shots.ts`: regenerates the images in `docs/`.
 - `gen-crossword.ts`: a backtracking 5×5 grid filler over `wordlist.txt`.
 - `check-crosswords.ts`: validates every puzzle (numbering, checked cells,
   answers in the word list, clue coverage).

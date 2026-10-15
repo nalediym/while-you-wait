@@ -12,6 +12,7 @@ import * as M from './model'
 import { keyToInput } from './ui/keys'
 import { drawPane } from './ui/pane'
 import type { ScreenPost } from './ui/screen'
+import type { PadPost } from './ui/pad'
 
 const PANE = 'arcade'
 const TITLE = 'While You Wait'
@@ -134,14 +135,22 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('ui.message', { requestId: PANE }, async ($, e, next) => {
-    const post = e.data as ScreenPost
+    const post = e.data as ScreenPost | PadPost
     const save = await getSave($)
+    const live = await getLive($)
+    const onScreen = post.type === 'press' && ['lcd', 'cell', 'row', 'header'].includes(post.press.kind)
+    if (onScreen && live.phase === 'attention') {
+      await $.ui.close({ id: PANE }) // the "go answer Claude" box
+      return next(e)
+    }
     const input: Input | undefined =
-      post.type === 'tap'
-        ? { kind: 'tap', col: post.col, row: post.row, button: post.button }
-        : post.ctrl || post.meta
-          ? undefined
-          : keyToInput(save.screen, post.key)
+      post.type === 'press'
+        ? M.pressToInput(save.screen, post.press, post.button)
+        : post.type === 'tap'
+          ? { kind: 'tap', col: post.col, row: post.row, button: post.button }
+          : post.ctrl || post.meta
+            ? undefined
+            : keyToInput(save.screen, post.key)
     if (input) await send($, input)
     return next(e)
   })
@@ -157,7 +166,7 @@ export const register: Register = on => {
     const save = await getSave($)
     const lcd: Lcd = (await $.state.get(lcdRef)).value ?? { hasFailed: false }
     return drawPane(
-      { Box: els.Box, Text: els.Text, Button: els.Button, ...('Client' in els ? { Client: els.Client } : {}) },
+      { Box: els.Box, Text: els.Text, Button: els.Button, ...('Client' in els ? { Client: els.Client } : {}), ...('Svg' in els ? { Svg: els.Svg } : {}) },
       { live, save, now: await $.clock.now(), puzzles: PUZZLES, useClient: e.surface === 'desktop' && !lcd.hasFailed },
       {
         send: input => void send($, input),

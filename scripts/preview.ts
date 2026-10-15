@@ -45,6 +45,7 @@ const html = (node: unknown): string => {
   if (n.type === 'Box' || n.type === 'Lcd') {
     st.push('display:flex', `flex-direction:${p.flexDirection ?? 'row'}`)
     if (p.display === 'none') st.push('display:none')
+    if (p.position === 'absolute') st.push('position:absolute;inset:0')
     if (p.backgroundColor) st.push(`background:${p.backgroundColor}`)
     if (p.justifyContent) st.push(`justify-content:${p.justifyContent}`)
     if (p.alignItems) st.push(`align-items:${p.alignItems}`)
@@ -63,6 +64,7 @@ const html = (node: unknown): string => {
     if (p.borderStyle) st.push(`border:${p.borderStyle === 'bold' ? 3 : 1}px solid ${p.borderColor ?? '#888'}`)
     return `<div class="${n.type === 'Lcd' ? 'lcd' : ''}" style="${st.join(';')}">${kids}</div>`
   }
+  if (n.type === 'Svg') return String(p.source ?? '').replace(/width="\d+" height="\d+"/, `width="${cols * 7}"`)
   if (n.type === 'Text') {
     if (p.color) st.push(`color:${p.color}`)
     if (p.backgroundColor) st.push(`background:${p.backgroundColor}`)

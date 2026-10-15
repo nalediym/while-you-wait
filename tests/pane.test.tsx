@@ -1,95 +1,121 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { Save } from '../types'
+import { CONTROLS, DEVICE_H, DEVICE_W, LCD } from '../hooks/ui/hit'
 import { harness } from './harness'
 
 const PLUGIN = 'while-you-wait'
 const T0 = Date.UTC(2026, 9, 15, 12, 0, 0)
+// The pad's region in cells: 1 cell = 2 device units across, 4 down.
+const COLS = DEVICE_W / 2
+const ROWS = DEVICE_H / 4
 
 const PANE_PROPS = {
   title: 'While You Wait',
   isFocused: false,
-  bodyColumns: 40,
+  bodyColumns: 60,
   placement: 'dock',
-  scroll: { top: 0, bodyRows: 40 },
+  scroll: { top: 0, bodyRows: 80 },
   view: {},
 } as never
 
-const mountPane = ($: Engine) =>
-  $.ui.mount({ plugin: PLUGIN, surface: 'desktop', component: 'Pane', requestId: 'arcade', props: PANE_PROPS, viewport: { columns: 44, rows: 60, isFullscreen: true } })
+const mountOn = <S extends 'desktop' | 'vscode'>($: Engine, surface: S) =>
+  $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', requestId: 'arcade', props: PANE_PROPS, viewport: { columns: 64, rows: 80, isFullscreen: true } })
+const mountPane = ($: Engine) => mountOn($, 'desktop')
 
 const startSession = ($: Engine) => $.session.start({ cwd: '/tmp', surface: 'desktop', isInteractive: true, startedAt: T0 } as never)
 const startTurn = ($: Engine, turnId: string) => $.turn.start({ text: 'build it', turnId })
 const completeTurn = ($: Engine, turnId: string) =>
   $.turn.complete({ answer: 'done', durationMs: 1, isAborted: false, turnId, reason: 'answer' } as never)
 
-const shows = async (ui: { find: (q: { text: RegExp }) => Promise<unknown> }, text: RegExp) => (await ui.find({ text })) !== undefined
+type Ui = Awaited<ReturnType<typeof mountPane>>
 
-describe('arcade pane on desktop', () => {
+const alt = async (ui: Ui) => String((await ui.find({ type: 'Svg' }))?.props.alt ?? '')
+
+/** A real click at device point (x, y) on the input pad, as the person's pointer. */
+const clickAt = async (ui: Ui, x: number, y: number, button: 'left' | 'right' = 'left') => {
+  await ui.resize({ columns: COLS, rows: ROWS, in: 'pad' } as never)
+  await ui.pointer({ type: 'down', x: Math.floor(x / 2), y: Math.floor(y / 4), button, in: 'pad' })
+  await ui.pointer({ type: 'up', x: Math.floor(x / 2), y: Math.floor(y / 4), button, in: 'pad' })
+}
+const clickControl = (ui: Ui, c: { cx: number; cy: number }) => clickAt(ui, c.cx, c.cy)
+
+describe('the handheld on desktop', () => {
   test('locked while idle, playable while working, paused + saved when Claude is done', async ($, on) => {
     const clock = mock.clock(on, { now: T0 })
     const h = harness(on)
-    const { opened, closed } = h
     await startSession($)
     const ui = await mountPane($)
 
-    // Idle: the resting screen with stats, and no controls to play with.
-    expect(await shows(ui, /CLAUDE'S RESTING/)).toBe(true)
-    expect(await ui.find({ key: 'pad-up' })).toBe(undefined)
+    // Idle: the resting screen; presses do nothing.
+    expect(await alt(ui)).toMatch(/Claude's resting/)
+    await clickControl(ui, CONTROLS.a)
+    expect(await alt(ui)).toMatch(/Claude's resting/)
 
-    // Claude starts working: the menu appears.
+    // Claude starts working: the menu. Click the 2048 row on the LCD.
     await startTurn($, 't1')
-    expect(await shows(ui, /SELECT GAME/)).toBe(true)
-    await ui.press({ key: 'open-2048' })
-    expect(await shows(ui, /SCORE 0/)).toBe(true)
-    expect(await ui.find({ type: 'Client', key: 'lcd-2048' })).toBeDefined()
+    expect(await alt(ui)).toMatch(/Select game: 2048/)
+    await clickAt(ui, LCD.x + 80, LCD.y + 16 + 10)
+    expect(await alt(ui)).toMatch(/2048, score 0/)
 
-    // Keys pressed on the LCD reach the game (arrows and WASD).
-    const before = JSON.stringify(await ui.drawn({ in: 'lcd-2048' }))
-    for (const key of ['left', 'up', 'right', 'down', 'a', 'w', 'd', 's']) await ui.key({ key, in: 'lcd-2048' })
-    expect(JSON.stringify(await ui.drawn({ in: 'lcd-2048' }))).not.toBe(before)
+    // Keys and the drawn D-pad both slide tiles.
+    for (const key of ['left', 'up', 'right', 'down', 'a', 'w', 'd', 's']) await ui.key({ key, in: 'pad' })
+    await clickAt(ui, CONTROLS.dpad.cx - 15, CONTROLS.dpad.cy)
+    expect((h.store.get('save-v1') as Save).g2048!.moves).toBeGreaterThan(0)
 
     // A turn running 60s offers the pane, once.
-    expect(opened).toEqual([])
+    expect(h.opened).toEqual([])
     await clock.advance(61_000)
-    expect(opened).toEqual(['arcade'])
+    expect(h.opened).toEqual(['arcade'])
     await clock.advance(120_000)
-    expect(opened).toEqual(['arcade'])
+    expect(h.opened).toEqual(['arcade'])
 
-    // Claude finishes: banner in the pane, game locked, state saved to the store.
+    // Claude finishes: banner + jump-back button, locked, saved.
     await completeTurn($, 't1')
-    expect(await shows(ui, /CLAUDE'S DONE/)).toBe(true)
-    expect(await ui.find({ key: 'jump-back' })).toBeDefined()
-    expect(await shows(ui, /CLAUDE'S RESTING/)).toBe(true)
-    expect(await ui.find({ key: 'pad-up' })).toBe(undefined)
-    const saved = (h.store.get('save-v1')) as Save
+    expect(await alt(ui)).toMatch(/Claude's resting.*Claude's done/)
+    const saved = h.store.get('save-v1') as Save
     expect(saved.screen).toBe('2048')
-    expect(saved.g2048?.moves ?? 0).toBeGreaterThan(0)
     expect(saved.stats.today.turns).toBe(1)
     expect(saved.stats.today.turnsWhileWaited).toBe(1)
-    expect(await shows(ui, /Claude shipped 1 task/)).toBe(true)
-
-    // The jump-back button closes the pane.
+    expect(await ui.find({ type: 'Text', text: /Claude shipped 1 task/ })).toBeDefined()
     await ui.press({ key: 'jump-back' })
-    expect(closed).toEqual(['arcade'])
+    expect(h.closed).toEqual(['arcade'])
   })
 
-  test('a permission prompt pauses the game with a "needs you" banner', async ($, on) => {
+  test('mines: click digs, right-click flags, the FLAG chip makes clicks flag', async ($, on) => {
     mock.clock(on, { now: T0 })
     const h = harness(on)
     await startSession($)
     const ui = await mountPane($)
     await startTurn($, 't1')
-    await ui.press({ key: 'open-mines' })
-    await ui.press({ key: 'btn-a' }) // dig the centre: first click is safe
-    expect(await shows(ui, /MINES/)).toBe(true)
+    await clickAt(ui, LCD.x + 80, LCD.y + 16 + 28 + 10) // the MINES row
+    expect(await alt(ui)).toMatch(/Mines, ready/)
+    const cell = (col: number, row: number) => ({ x: LCD.x + 17 + col * 14 + 6, y: LCD.y + 14 + row * 14 + 6 })
+    await clickAt(ui, cell(4, 4).x, cell(4, 4).y) // first dig is safe
+    expect(await alt(ui)).toMatch(/Mines, (playing|won)/)
+    const m = (h.store.get('save-v1') as Save).mines!
+    const hidden = m.revealed.findIndex(open => !open)
+    await clickAt(ui, cell(hidden % 9, Math.floor(hidden / 9)).x, cell(hidden % 9, Math.floor(hidden / 9)).y, 'right')
+    expect(await alt(ui)).toMatch(/9 flags left/)
+    await clickAt(ui, LCD.x + 50, LCD.y + 4) // the header's FLAG chip
+    expect(await alt(ui)).toMatch(/flag mode on/)
+  })
 
+  test('a permission prompt pauses with "Claude needs you"; clicking the screen jumps back', async ($, on) => {
+    mock.clock(on, { now: T0 })
+    const h = harness(on)
+    await startSession($)
+    const ui = await mountPane($)
+    await startTurn($, 't1')
+    await ui.key({ key: 'down', in: 'pad' })
+    await ui.key({ key: 'return', in: 'pad' }) // MINES
+    await clickControl(ui, CONTROLS.a) // dig the centre
     await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'rm -rf build' } } as never)
-    expect(await shows(ui, /CLAUDE NEEDS YOU/)).toBe(true)
-    expect(await shows(ui, /PAUSED/)).toBe(true)
-    expect(await ui.find({ key: 'pad-up' })).toBe(undefined)
-    const saved = (h.store.get('save-v1')) as Save
-    expect(saved.mines?.runningSince).toBe(null) // clock banked exactly
+    expect(await alt(ui)).toMatch(/Claude needs you/)
+    expect(await ui.find({ key: 'jump-back' })).toBeDefined()
+    expect((h.store.get('save-v1') as Save).mines?.runningSince).toBe(null) // the clock is banked
+    await clickAt(ui, LCD.x + 80, LCD.y + 70)
+    expect(h.closed).toEqual(['arcade'])
   })
 
   test('next session resumes exactly where you left off', async ($, on) => {
@@ -105,32 +131,42 @@ describe('arcade pane on desktop', () => {
     })
     await startSession($)
     const ui = await mountPane($)
-    expect(await shows(ui, /Claude shipped 14 tasks while you cleared 6 boards/)).toBe(true)
+    expect(await ui.find({ type: 'Text', text: /Claude shipped 14 tasks while you cleared 6 boards/ })).toBeDefined()
     await startTurn($, 't9')
-    expect(await shows(ui, /SCORE 777/)).toBe(true)
-    expect(await ui.find({ type: 'Text', text: /1024/, in: 'lcd-2048' })).toBeDefined()
+    expect(await alt(ui)).toMatch(/2048, score 777/)
   })
 
   test('/games opens the pane', async ($, on) => {
     mock.clock(on, { now: T0 })
     const h = harness(on)
-    const { opened, closed } = h
     await startSession($)
     const ran = await $.command.run({ command: 'games', args: '' } as never)
-    expect(opened).toEqual(['arcade'])
+    expect(h.opened).toEqual(['arcade'])
     expect(ran.text).toMatch(/locked/)
   })
 
-  test('the crossword takes typed letters from the LCD', async ($, on) => {
+  test('the crossword takes clicks and typed letters, with its clues listed below', async ($, on) => {
     mock.clock(on, { now: T0 })
     harness(on)
     await startSession($)
     const ui = await mountPane($)
     await startTurn($, 't1')
-    await ui.press({ key: 'open-crossword' })
-    expect(await ui.find({ type: 'Client', key: 'lcd-crossword' })).toBeDefined()
-    await ui.key({ key: 'q', in: 'lcd-crossword' })
-    expect(await ui.find({ type: 'Text', text: /Q/, in: 'lcd-crossword' })).toBeDefined()
-    expect(await ui.find({ key: 'pad-up' })).toBeDefined()
+    await clickAt(ui, LCD.x + 80, LCD.y + 16 + 56 + 10) // MINI XWORD
+    expect(await alt(ui)).toMatch(/Crossword cw-001/)
+    await clickAt(ui, LCD.x + 28 + 21 + 10, LCD.y + 4 + 10) // row 0, col 1
+    await ui.key({ key: 'q', in: 'pad' })
+    expect(await alt(ui)).toMatch(/Crossword cw-001: Q/)
+    expect(await ui.find({ type: 'Text', text: 'ACROSS' })).toBeDefined()
+  })
+
+  test('a surface with no Client falls back to the plain drawing', async ($, on) => {
+    mock.clock(on, { now: T0 })
+    harness(on)
+    await startSession($)
+    const ui = await mountOn($, 'vscode')
+    await startTurn($, 't1')
+    expect(await ui.find({ type: 'Text', text: /SELECT GAME/ })).toBeDefined()
+    await ui.press({ key: 'open-2048' })
+    expect(await ui.find({ type: 'Text', text: /SCORE 0/ })).toBeDefined()
   })
 })

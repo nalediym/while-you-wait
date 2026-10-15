@@ -7,6 +7,7 @@ import * as Mines from './games/minesweeper'
 import * as Cw from './games/crossword'
 import type { PuzzleData } from './games/puzzles'
 import type { Dir, Live, Save, Screen, Tally } from '../types'
+import type { Press } from './ui/hit'
 
 export type { Dir, Live, Save, Screen, Tally }
 
@@ -225,6 +226,25 @@ export const act = (s: Save, input: Input, live: Live, now: number, puzzles: rea
         next = Cw.select(p, c, input.row * Cw.N + input.col)
       return next === c ? s : recordCleared(s, { ...s, crossword: next }, now)
     }
+  }
+}
+
+/** A press on the drawn handheld -> an input, per screen. */
+export const pressToInput = (
+  screen: Screen,
+  press: Press,
+  button: 'left' | 'right',
+): Input | undefined => {
+  switch (press.kind) {
+    case 'cell': return { kind: 'tap', col: press.col, row: press.row, button }
+    case 'row': return screen === 'menu' ? { kind: 'open', screen: MENU[press.index] ?? 'menu' } : undefined
+    case 'dir': return { kind: 'dir', dir: press.dir }
+    case 'a': return { kind: 'a' }
+    case 'b': return { kind: 'b' }
+    case 'select': return { kind: 'select' }
+    case 'start': return { kind: 'start' }
+    case 'header': return screen === 'mines' ? { kind: 'flagMode' } : undefined
+    case 'lcd': return undefined
   }
 }
 
