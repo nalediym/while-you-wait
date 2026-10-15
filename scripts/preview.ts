@@ -65,6 +65,7 @@ const html = (node: unknown): string => {
     return `<div class="${n.type === 'Lcd' ? 'lcd' : ''}" style="${st.join(';')}">${kids}</div>`
   }
   if (n.type === 'Svg') return String(p.source ?? '').replace(/width="\d+" height="\d+"/, `width="${cols * 7}"`)
+  if (n.type === 'Input') return `<input placeholder="${esc(String(p.placeholder ?? ''))}" style="width:100%;font:12px system-ui;padding:4px 6px;border-radius:6px;border:1px solid #555;background:#1b1b1f;color:#ddd">`
   if (n.type === 'Text') {
     if (p.color) st.push(`color:${p.color}`)
     if (p.backgroundColor) st.push(`background:${p.backgroundColor}`)
@@ -90,8 +91,8 @@ body{margin:0;padding:16px;background:#1b1b1f;color:#ddd;font:13px/1.25 ui-monos
 .frame h2{font:600 11px system-ui;color:#999;margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em}
 .frame>div{width:${cols}ch}
 span{line-height:1.25em;min-height:1.25em}
-button{font:12px system-ui;margin:1px;border-radius:5px;border:1px solid #0f380f;background:#e9efe0;color:#0f380f;padding:1px 6px}
-button.primary{background:#0f380f;color:#9bbc0f}
+button{font:12px system-ui;margin:2px;border-radius:6px;border:1px solid #4a4a50;background:#2f2f34;color:#e6e6e6;padding:3px 9px}
+button.primary{background:#d97757;border-color:#d97757;color:#fff}
 button.plain{background:transparent;border:none;color:#0f380f;padding:0;text-align:left;font:13px/1.25 ui-monospace,Menlo,monospace}
 button sup{opacity:.5;font-size:9px;margin-left:2px}
 .lcd{outline:1px dashed rgba(255,0,0,.35)}

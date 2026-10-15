@@ -1,8 +1,8 @@
-// The handheld, drawn as one SVG: an off-white case, the dark bezel with its
-// WHILE-YOU-WAIT label and power LED, a 160x144 LCD in the four DMG greens,
-// a D-pad, A/B and SELECT/START. Pure: state in, `{ svg, hit }` out. `hit`
-// says where things are (in device units) so the input layer over the
-// drawing can turn a click into a square, a menu row or a button.
+// The handheld's screen half, drawn as one SVG: an off-white case, the dark
+// bezel with its WHILE-YOU-WAIT label and power LED, and a 160x144 LCD in the
+// four DMG greens. The controls are real buttons under it (pane.tsx), since
+// the desktop delivers no clicks to a drawing. Pure: state in, `{ svg, hit }`
+// out; `hit` maps a tap on the LCD to a square or a menu row where it can.
 
 import * as Mines from '../games/minesweeper'
 import { entryAt, layout } from '../games/crossword'
@@ -10,7 +10,7 @@ import type { PuzzleData } from '../games/puzzles'
 import type { Live, Save, SessionStats } from '../model'
 import { GAMES, MENU, fmtClock, fmtDuration } from '../model'
 import { GB } from './palette'
-import { CONTROLS, DEVICE_H, DEVICE_W, LCD } from './hit'
+import { DEVICE_H, DEVICE_W, LCD } from './hit'
 import type { HitMap } from './hit'
 import { Typesetter, normalize, textWidth, wrap } from './pixelfont'
 
@@ -21,11 +21,8 @@ const CASE_EDGE = '#b3aea3'
 const BEZEL = '#56586b'
 const INK = '#2c3178' // the navy of the printed labels
 const MAROON = '#9a2257'
-const RUBBER = '#2a2b33'
-const PRESSED_RUBBER = '#0d0d12'
-const MAROON_DOWN = '#6e1840'
 
-export type DeviceView = { save: Save; live: Live; session: SessionStats; pressed?: string | null; now: number; puzzles: readonly PuzzleData[] }
+export type DeviceView = { save: Save; live: Live; session: SessionStats; now: number; puzzles: readonly PuzzleData[] }
 
 const rect = (x: number, y: number, w: number, h: number, fill: string, extra = '') =>
   `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"${extra}/>`
@@ -229,7 +226,7 @@ const scores = (t: Typesetter, v: DeviceView): Lcd => {
 }
 
 const screenFor = (t: Typesetter, v: DeviceView): Lcd => {
-  if (v.live.phase === 'idle') return resting(t, v)
+  if (v.live.phase === 'idle' && !v.live.testMode) return resting(t, v)
   const { save } = v
   if (save.screen === '2048' && save.g2048) return g2048(t, v)
   if (save.screen === 'mines' && save.mines) return mines(t, v)
@@ -259,69 +256,36 @@ export const drawDevice = (v: DeviceView): { svg: string; hit: HitMap } => {
   const lw = textWidth(label)
   const lx = Math.round((DEVICE_W - lw) / 2)
   const isOn = v.live.phase !== 'idle'
-  const { dpad, a, b } = CONTROLS
 
   const caseLayer =
-    dmgShape(1, 1, DEVICE_W - 2, DEVICE_H - 2, 10, 44, CASE, ` stroke="${CASE_EDGE}" stroke-width="1"`) +
+    dmgShape(1, 1, DEVICE_W - 2, DEVICE_H - 2, 10, 18, CASE, ` stroke="${CASE_EDGE}" stroke-width="1"`) +
     dmgShape(6, 6, 188, 176, 6, 26, BEZEL) +
     rect(14, 12, lx - 20, 1, MAROON) + rect(14, 15, lx - 20, 1, INK) +
     rect(lx + lw + 6, 12, DEVICE_W - 14 - (lx + lw + 6), 1, MAROON) + rect(lx + lw + 6, 15, DEVICE_W - 14 - (lx + lw + 6), 1, INK) +
     t.text(label, lx, 10, '#c9cbd6') +
     `<circle cx="15" cy="58" r="3" fill="${ledColor(v.live)}"/>` +
     (isOn ? `<circle cx="15" cy="58" r="5" fill="${ledColor(v.live)}" opacity=".25"/>` : '') +
-    t.text('PWR', 6, 66, '#8d8fa0')
+    t.text('PWR', 6, 66, '#8d8fa0') +
+    (v.live.testMode ? t.text('TEST MODE', LCD.x, 171, '#ffb000') : '')
 
   const lcdLayer =
     `<g transform="translate(${LCD.x} ${LCD.y})" clip-path="url(#lcdclip)">` +
     rect(0, 0, LCD.w, LCD.h, GB.lightest) + lcdBody + '</g>' +
     rect(LCD.x, LCD.y, LCD.w, 1, '#000', ' opacity=".18"') // the glass shadow
 
-  const pressed = v.pressed ?? null
-  const dpadArm: Record<string, string> = {
-    up: rect(dpad.cx - 6, dpad.cy - 19, 12, 13, PRESSED_RUBBER, ' rx="2"'),
-    down: rect(dpad.cx - 6, dpad.cy + 6, 12, 13, PRESSED_RUBBER, ' rx="2"'),
-    left: rect(dpad.cx - 19, dpad.cy - 6, 13, 12, PRESSED_RUBBER, ' rx="2"'),
-    right: rect(dpad.cx + 6, dpad.cy - 6, 13, 12, PRESSED_RUBBER, ' rx="2"'),
-  }
-  const button = (c: { cx: number; cy: number }, isDown: boolean) =>
-    isDown
-      ? `<circle cx="${c.cx}" cy="${c.cy + 1}" r="10" fill="${MAROON_DOWN}"/>`
-      : `<circle cx="${c.cx}" cy="${c.cy}" r="11" fill="${MAROON}"/><circle cx="${c.cx - 3}" cy="${c.cy - 3}" r="4" fill="#b8457a" opacity=".6"/>`
-  const pill = (x: number, cx: number, isDown: boolean) =>
-    `<rect x="${x}" y="${isDown ? 257 : 256}" width="22" height="7" rx="3.5" fill="${isDown ? '#5d5b66' : '#8b8996'}" transform="rotate(-25 ${cx} 259)"/>`
-
-  const controls =
-    // D-pad: a dark cross with a dimple; the pressed arm darkens.
-    rect(dpad.cx - 6, dpad.cy - 19, 12, 38, RUBBER, ' rx="2"') +
-    rect(dpad.cx - 19, dpad.cy - 6, 38, 12, RUBBER, ' rx="2"') +
-    (pressed && dpadArm[pressed] ? dpadArm[pressed] : '') +
-    `<circle cx="${dpad.cx}" cy="${dpad.cy}" r="3" fill="#3b3c46"/>` +
-    t.text('▲', dpad.cx - 2, dpad.cy - 16, '#555764') + t.text('▼', dpad.cx - 2, dpad.cy + 10, '#555764') +
-    t.text('◀', dpad.cx - 17, dpad.cy - 3, '#555764') + t.text('▶', dpad.cx + 13, dpad.cy - 3, '#555764') +
-    // A and B: maroon buttons on a tilted pill.
-    `<rect x="${b.cx - 16}" y="${a.cy - 14}" width="64" height="30" rx="15" fill="#c9c4b9" transform="rotate(-25 ${(a.cx + b.cx) / 2} ${(a.cy + b.cy) / 2})"/>` +
-    button(b, pressed === 'b') +
-    button(a, pressed === 'a') +
-    t.text('B', b.cx - 2, b.cy + 15, INK) + t.text('A', a.cx - 2, a.cy + 15, INK) +
-    // SELECT / START.
-    pill(70, 81, pressed === 'select') +
-    pill(108, 119, pressed === 'start') +
-    t.text('SELECT', 63, 270, INK) + t.text('START', 105, 270, INK) +
-    // Speaker grille.
-    [0, 1, 2, 3, 4, 5].map(i => `<rect x="${150 + i * 7}" y="248" width="3" height="26" rx="1.5" fill="#bdb8ad" transform="rotate(-30 ${151 + i * 7} 261)"/>`).join('')
-
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${DEVICE_W} ${DEVICE_H}" width="${DEVICE_W * 2}" height="${DEVICE_H * 2}" shape-rendering="crispEdges">` +
     `<defs>${t.defs()}<clipPath id="lcdclip"><rect width="${LCD.w}" height="${LCD.h}"/></clipPath>` +
     `<pattern id="dither" width="2" height="2" patternUnits="userSpaceOnUse"><rect width="1" height="1" fill="${GB.darkest}"/><rect x="1" y="1" width="1" height="1" fill="${GB.dark}"/></pattern></defs>` +
-    caseLayer + lcdLayer + controls + '</svg>'
+    caseLayer + lcdLayer + '</svg>'
 
-  return { svg, hit: { ...CONTROLS, grid: screen.grid, menu: screen.menu, hasHeader: screen.hasHeader ?? false } }
+  return { svg, hit: { lcd: LCD, grid: screen.grid, menu: screen.menu, hasHeader: screen.hasHeader ?? false } }
 }
 
 /** What the screen shows, in words: the Svg's alt text (and what tests read). */
 export const svgAlt = (v: DeviceView): string => {
   const { save, live } = v
+  if (live.testMode && live.phase !== 'working') return `While-you-wait, test mode: ${normalize(save.screen)} screen.`
   if (live.phase === 'idle') return `While-you-wait. Claude's resting: go ship something.${live.banner === 'done' ? " Claude's done." : ''} This session: ${v.session.turns} tasks shipped.`
   if (live.phase === 'attention') return 'While-you-wait. Paused: Claude needs you.'
   if (live.agents > 0 && !live.isTurnRunning) return `While-you-wait. ${live.agents} background agent${live.agents === 1 ? '' : 's'} working: ${normalize(save.screen)} screen.`

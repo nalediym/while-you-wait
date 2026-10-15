@@ -42,12 +42,11 @@ const states: [string, M.Save, M.Live][] = [
   ['menu + 2 agents', { ...save, screen: 'menu' }, { ...working, isTurnRunning: false, agents: 2 }],
   ['mines + 3 agents', { ...save, screen: 'mines', mines: m, flagMode: true }, { ...working, agents: 3 }],
   ['xword + 1 agent', { ...save, screen: 'crossword', crossword: c }, { ...working, agents: 1 }],
-  ['A + left pressed', { ...save, screen: '2048', g2048: g }, working],
+  ['test mode (idle)', { ...save, screen: '2048', g2048: g }, { ...idle, testMode: true }],
 ]
 const out = process.argv[2] ?? '.preview/devices.html'
 const cards = states.map(([name, s, live]) => {
-  const pressed = name.startsWith('A + left') ? 'a' : null
-  const { svg } = drawDevice({ save: s, live, session, pressed, now: T0 + 42_000, puzzles: PUZZLES })
+  const { svg } = drawDevice({ save: s, live, session, now: T0 + 42_000, puzzles: PUZZLES })
   return `<figure><figcaption>${name} · ${(svg.length / 1024).toFixed(1)} KB</figcaption>${svg.replace(/width="\d+" height="\d+"/, 'width="300"')}</figure>`
 })
 writeFileSync(out, `<!doctype html><meta charset="utf-8"><title>while-you-wait devices</title><style>body{margin:0;padding:20px;background:#1e1e22;font:12px system-ui;color:#999;display:flex;flex-wrap:wrap;gap:24px}figure{margin:0}figcaption{margin-bottom:6px}</style>${cards.join('')}`)

@@ -24,6 +24,7 @@ export const harness = (on: On, stored: Record<string, unknown> = {}): Harness =
   const panes = new Map<string, UiPane>()
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('tool.register', (_$, e) => ({ value: { tool: `mcp__while-you-wait__${e.name}` } }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('ui.status', (_$, e) => {

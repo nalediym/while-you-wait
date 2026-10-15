@@ -26,8 +26,6 @@ export type PaneView = {
   live: Live
   /** This session's work stats (never stored). */
   session: SessionStats
-  /** The drawn control just pressed (`a`, `up`, ...), shown pushed-in; null otherwise. */
-  pressed: string | null
   now: number
   puzzles: readonly PuzzleData[]
   /** Draw the handheld (Svg + input pad) rather than plain Boxes; the LCD Client too. */
@@ -39,7 +37,7 @@ export type PaneActions = { send: (input: Input) => void; jumpBack: () => void }
 export const drawCellsPane = (els: PaneElements, view: PaneView, act: PaneActions): RenderElement => {
   const { Box, Text, Button } = els
   const { live, save } = view
-  const isWorking = live.phase === 'working'
+  const isWorking = live.phase === 'working' || live.testMode
 
   const banner =
     live.banner === null ? null : (

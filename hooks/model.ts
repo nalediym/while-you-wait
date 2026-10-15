@@ -39,8 +39,11 @@ export const freshSession = (): SessionStats => ({
 })
 
 export const freshLive = (): Live => ({
-  phase: 'idle', turnId: null, isTurnRunning: false, agents: 0, busySince: null, offeredFor: null, banner: null, playedThisTurn: false,
+  phase: 'idle', turnId: null, isTurnRunning: false, agents: 0, busySince: null, offeredFor: null, banner: null, playedThisTurn: false, testMode: false,
 })
+
+/** Playable while Claude works, or anytime in test mode. */
+export const isPlayable = (live: Live): boolean => live.phase === 'working' || live.testMode
 
 export const freshSave = (): Save => ({
   v: 2,
@@ -190,11 +193,11 @@ export const openScreen = (s: Save, screen: Screen, now: number, puzzles: readon
 export const MENU: readonly Screen[] = ['2048', 'mines', 'crossword', 'scores']
 
 /**
- * One input, applied only while Claude is working. Returns the save
+ * One input, applied only while Claude is working (or in test mode). Returns the save
  * unchanged (same object) when the input did nothing.
  */
 export const act = (s: Save, input: Input, live: Live, now: number, puzzles: readonly PuzzleData[]): Save => {
-  if (live.phase !== 'working') return s
+  if (!isPlayable(live)) return s
   if (input.kind === 'select') return s.screen === 'menu' ? s : { ...pauseAll(s, now), screen: 'menu' }
   if (input.kind === 'open') return openScreen(s, input.screen, now, puzzles)
 
@@ -227,8 +230,8 @@ export const act = (s: Save, input: Input, live: Live, now: number, puzzles: rea
       if (input.kind === 'b' && s.mines.status !== 'playing' && s.mines.status !== 'ready') return { ...s, screen: 'menu' }
       const at = input.kind === 'tap' ? input.row * m.w + input.col : m.cursor
       if (input.kind === 'tap' && (input.col < 0 || input.col >= m.w || input.row < 0 || input.row >= m.h)) return s
-      const flag = input.kind === 'b' || (input.kind === 'tap' && (input.button === 'right' || s.flagMode))
-      const reveal = input.kind === 'a' || (input.kind === 'tap' && !flag)
+      const flag = input.kind === 'b' || ((input.kind === 'a' || input.kind === 'tap') && s.flagMode) || (input.kind === 'tap' && input.button === 'right')
+      const reveal = (input.kind === 'a' || input.kind === 'tap') && !flag
       if (!flag && !reveal) return s
       const next = flag ? Mines.toggleFlag(m, at) : Mines.reveal(m, at, now)
       return recordCleared(s, { ...s, mines: next }, now)
@@ -253,7 +256,7 @@ export const act = (s: Save, input: Input, live: Live, now: number, puzzles: rea
   }
 }
 
-/** A press on the drawn handheld -> an input, per screen. */
+/** A tap on the drawn screen -> an input, per screen. */
 export const pressToInput = (
   screen: Screen,
   press: Press,
@@ -262,11 +265,6 @@ export const pressToInput = (
   switch (press.kind) {
     case 'cell': return { kind: 'tap', col: press.col, row: press.row, button }
     case 'row': return screen === 'menu' ? { kind: 'open', screen: MENU[press.index] ?? 'menu' } : undefined
-    case 'dir': return { kind: 'dir', dir: press.dir }
-    case 'a': return { kind: 'a' }
-    case 'b': return { kind: 'b' }
-    case 'select': return { kind: 'select' }
-    case 'start': return { kind: 'start' }
     case 'header': return screen === 'mines' ? { kind: 'flagMode' } : undefined
     case 'lcd': return undefined
   }

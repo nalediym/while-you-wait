@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { Save } from '../types'
-import { CONTROLS, DEVICE_H, DEVICE_W, LCD } from '../hooks/ui/hit'
+import { DEVICE_H, DEVICE_W, LCD } from '../hooks/ui/hit'
 import { harness } from './harness'
 
 const PLUGIN = 'while-you-wait'
@@ -38,7 +38,6 @@ const clickAt = async (ui: Ui, x: number, y: number, button: 'left' | 'right' = 
   await ui.pointer({ type: 'down', x: Math.floor(x / 2), y: Math.floor(y / 4), button, in: 'pad' })
   await ui.pointer({ type: 'up', x: Math.floor(x / 2), y: Math.floor(y / 4), button, in: 'pad' })
 }
-const clickControl = (ui: Ui, c: { cx: number; cy: number }) => clickAt(ui, c.cx, c.cy)
 
 describe('the handheld on desktop', () => {
   test('locked while idle, playable while working, paused + saved when Claude is done', async ($, on) => {
@@ -47,10 +46,9 @@ describe('the handheld on desktop', () => {
     await startSession($)
     const ui = await mountPane($)
 
-    // Idle: the resting screen; presses do nothing.
+    // Idle: the resting screen, and no controls to play with.
     expect(await alt(ui)).toMatch(/Claude's resting/)
-    await clickControl(ui, CONTROLS.a)
-    expect(await alt(ui)).toMatch(/Claude's resting/)
+    expect(await ui.find({ key: 'btn-a' })).toBe(undefined)
 
     // Claude starts working: the menu. Click the 2048 row on the LCD.
     await startTurn($, 't1')
@@ -58,9 +56,9 @@ describe('the handheld on desktop', () => {
     await clickAt(ui, LCD.x + 80, LCD.y + 16 + 10)
     expect(await alt(ui)).toMatch(/2048, score 0/)
 
-    // Keys and the drawn D-pad both slide tiles.
-    for (const key of ['left', 'up', 'right', 'down', 'a', 'w', 'd', 's']) await ui.key({ key, in: 'pad' })
-    await clickAt(ui, CONTROLS.dpad.cx - 15, CONTROLS.dpad.cy)
+    // The real D-pad buttons slide tiles (and keys on the screen, where they reach it).
+    for (const dir of ['left', 'up', 'right', 'down']) await ui.press({ key: `pad-${dir}` })
+    for (const key of ['a', 'w', 'd', 's']) await ui.key({ key, in: 'pad' })
     expect((h.store.get('save-v2') as Save).g2048!.moves).toBeGreaterThan(0)
 
     // A turn running 60s offers the pane, once.
@@ -82,13 +80,17 @@ describe('the handheld on desktop', () => {
     expect(h.closed).toEqual(['arcade'])
   })
 
-  test('mines: click digs, right-click flags, the FLAG chip makes clicks flag', async ($, on) => {
+  test('mines: A digs, B flags, FLAG mode makes A flag; screen taps work too', async ($, on) => {
     mock.clock(on, { now: T0 })
     const h = harness(on)
     await startSession($)
     const ui = await mountPane($)
     await startTurn($, 't1')
-    await clickAt(ui, LCD.x + 80, LCD.y + 16 + 28 + 10) // the MINES row
+    await ui.press({ key: 'open-mines' })
+    expect(await alt(ui)).toMatch(/Mines, ready/)
+    await ui.press({ key: 'btn-a' }) // dig the centre: always safe
+    expect(await alt(ui)).toMatch(/Mines, (playing|won)/)
+    await ui.press({ key: 'btn-start' })
     expect(await alt(ui)).toMatch(/Mines, ready/)
     const cell = (col: number, row: number) => ({ x: LCD.x + 17 + col * 14 + 6, y: LCD.y + 14 + row * 14 + 6 })
     await clickAt(ui, cell(4, 4).x, cell(4, 4).y) // first dig is safe
@@ -97,8 +99,9 @@ describe('the handheld on desktop', () => {
     const hidden = m.revealed.findIndex(open => !open)
     await clickAt(ui, cell(hidden % 9, Math.floor(hidden / 9)).x, cell(hidden % 9, Math.floor(hidden / 9)).y, 'right')
     expect(await alt(ui)).toMatch(/9 flags left/)
-    await clickAt(ui, LCD.x + 50, LCD.y + 4) // the header's FLAG chip
+    await ui.press({ key: 'flag-mode' })
     expect(await alt(ui)).toMatch(/flag mode on/)
+    expect((await ui.find({ key: 'btn-a' }))?.props.label).toBe('A flag')
   })
 
   test('a permission prompt pauses with "Claude needs you"; clicking the screen jumps back', async ($, on) => {
@@ -107,9 +110,9 @@ describe('the handheld on desktop', () => {
     await startSession($)
     const ui = await mountPane($)
     await startTurn($, 't1')
-    await ui.key({ key: 'down', in: 'pad' })
-    await ui.key({ key: 'return', in: 'pad' }) // MINES
-    await clickControl(ui, CONTROLS.a) // dig the centre
+    await ui.press({ key: 'pad-down' })
+    await ui.press({ key: 'btn-a' }) // MINES
+    await ui.press({ key: 'btn-a' }) // dig the centre
     await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'rm -rf build' } } as never)
     expect(await alt(ui)).toMatch(/Claude needs you/)
     expect(await ui.find({ key: 'jump-back' })).toBeDefined()
@@ -186,19 +189,40 @@ describe('the handheld on desktop', () => {
     expect(await ui.find({ key: 'jump-back' })).toBeDefined()
   })
 
-  test('a click on a drawn button shows it pressed, and is logged raw', async ($, on) => {
-    const clock = mock.clock(on, { now: T0 })
+  test('test mode: /games test makes it playable while Claude is idle, and turns off again', async ($, on) => {
+    mock.clock(on, { now: T0 })
     const h = harness(on)
     await startSession($)
     const ui = await mountPane($)
+    expect(await alt(ui)).toMatch(/Claude's resting/)
+    const ran = await $.command.run({ command: 'games', args: 'test' } as never)
+    expect(ran.text).toMatch(/test mode ON/)
+    expect(await alt(ui)).toMatch(/test mode: MENU/)
+    expect(await ui.find({ type: 'Text', text: /Test mode: playable anytime/ })).toBeDefined()
+    await ui.press({ key: 'open-2048' })
+    await ui.press({ key: 'pad-left' })
+    await ui.press({ key: 'pad-up' })
+    expect((h.store.get('save-v2') as Save).screen).toBe('2048')
+    expect(((await ui.find({ type: 'Svg' }))?.props.source as string)).toContain('#ffb000') // the TEST MODE label
+    await $.command.run({ command: 'games', args: 'test off' } as never)
+    expect(await alt(ui)).toMatch(/Claude's resting/)
+    expect(await ui.find({ key: 'btn-a' })).toBe(undefined)
+  })
+
+  test('the self-test tool reports live state and the event timeline', async ($, on) => {
+    mock.clock(on, { now: T0 })
+    const h = harness(on)
+    await startSession($)
     await startTurn($, 't1')
-    await clickControl(ui, CONTROLS.a)
-    const svg = String((await ui.find({ type: 'Svg' }))?.props.source ?? '')
-    expect(svg).toContain('#6e1840') // A drawn pushed-in
-    await clock.advance(200)
-    expect(String((await ui.find({ type: 'Svg' }))?.props.source ?? '')).not.toContain('#6e1840')
-    const log = h.store.get('click-log') as { press: string; columns: number; rows: number }[]
-    expect(log.at(-1)).toMatchObject({ press: 'a', columns: COLS, rows: ROWS })
+    h.agents = [{ id: 'a1', description: 'x', type: 'general-purpose', status: 'running' }] as never
+    const callTool = $.tool.call as unknown as (e: object) => Promise<{ result?: unknown }>
+    const ran = await callTool({ tool: 'mcp__while-you-wait__debug', tool_use_id: 'd1', action: 'status' })
+    const report = JSON.parse(String(ran.result))
+    expect(report.build).toBe('0.3.0')
+    expect(report.live).toMatchObject({ phase: 'working', agents: 1, isTurnRunning: true })
+    expect(report.timeline.map((t: { event: string }) => t.event)).toEqual(expect.arrayContaining(['session.start', 'turn.start', 'agents']))
+    const on2 = JSON.parse(String((await callTool({ tool: 'mcp__while-you-wait__debug', tool_use_id: 'd2', action: 'test_on' })).result))
+    expect(on2.live.testMode).toBe(true)
   })
 
   test('/games opens the pane', async ($, on) => {
@@ -216,11 +240,13 @@ describe('the handheld on desktop', () => {
     await startSession($)
     const ui = await mountPane($)
     await startTurn($, 't1')
-    await clickAt(ui, LCD.x + 80, LCD.y + 16 + 56 + 10) // MINI XWORD
+    await ui.press({ key: 'open-crossword' })
     expect(await alt(ui)).toMatch(/Crossword cw-001/)
-    await clickAt(ui, LCD.x + 28 + 21 + 10, LCD.y + 4 + 10) // row 0, col 1
-    await ui.key({ key: 'q', in: 'pad' })
+    await clickAt(ui, LCD.x + 28 + 21 + 10, LCD.y + 4 + 10) // tap row 0, col 1
+    await ui.input({ key: 'letters', text: 'q', kind: 'change' }) // the typing box
     expect(await alt(ui)).toMatch(/Crossword cw-001: Q/)
+    await ui.press({ key: 'btn-b' }) // erase
+    expect(await alt(ui)).toMatch(/Crossword cw-001: \./)
     expect(await ui.find({ type: 'Text', text: 'ACROSS' })).toBeDefined()
   })
 

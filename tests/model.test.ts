@@ -82,6 +82,12 @@ describe('model', () => {
     expect(M.loadSave({ v: 0 }).screen).toBe('menu')
   })
 
+  test('test mode makes every input count even while Claude is idle', () => {
+    const s = M.freshSave()
+    const idle = { ...M.freshLive(), testMode: true }
+    expect(M.act(s, { kind: 'open', screen: '2048' }, idle, T0, PUZZLES).screen).toBe('2048')
+  })
+
   test('keys: WASD moves except in the crossword, where letters type', () => {
     expect(keyToInput('2048', 'w')).toEqual({ kind: 'dir', dir: 'up' })
     expect(keyToInput('2048', 'left')).toEqual({ kind: 'dir', dir: 'left' })

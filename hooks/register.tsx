@@ -5,7 +5,7 @@
 import { update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { ClickLog, Lcd, Live, Pressed, Save, SessionStats } from '../types'
+import type { ClickLog, Lcd, Live, Save, SessionStats, TraceEntry } from '../types'
 import { PUZZLES } from './games/puzzles'
 import type { Input } from './model'
 import * as M from './model'
@@ -22,9 +22,11 @@ const OLD_STORE_KEY = 'save-v1' // v1 also kept stats; its games and bests carry
 const liveRef = { plugin: 'while-you-wait', key: 'live' } as const
 const saveRef = { plugin: 'while-you-wait', key: 'save' } as const
 const sessionRef = { plugin: 'while-you-wait', key: 'session' } as const
-const pressedRef = { plugin: 'while-you-wait', key: 'pressed' } as const
-const CLICK_LOG_KEY = 'click-log' // the last clicks, raw, for diagnosing taps that land wrong
+const CLICK_LOG_KEY = 'click-log' // the last screen taps, raw, for diagnosing taps that land wrong
+const TRACE_KEY = 'debug-timeline' // the last events and the state after each: what the self-test reads
 const AGENT_POLL_MS = 3_000
+export const BUILD = '0.3.0' // keep in step with plugin.json; the timeline records which build loaded
+const DEBUG_TOOL = 'mcp__while-you-wait__debug'
 const lcdRef = { plugin: 'while-you-wait', key: 'lcd' } as const
 
 // Spread over a fresh value so a Live saved by an older version of this code still reads whole.
@@ -70,9 +72,10 @@ const offer = async ($: EngineInterface) => {
   const live = await getLive($)
   if (!M.shouldOffer(live, await $.clock.now())) return
   await setLive($, l => ({ ...l, offeredFor: live.busySince }))
-  if (await isPaneOpen($)) return
+  if (await isPaneOpen($)) return trace($, 'offer', 'pane already open')
   const opened = await $.ui.open({ id: PANE, title: TITLE })
   if (!opened.isPlaced) $.ui.status("🎮 Claude's on a long one — /games while you wait")
+  await trace($, 'offer', opened.isPlaced ? 'pane opened' : `not placed: ${opened.reason}`)
 }
 
 const scheduleOffer = async ($: EngineInterface) => {
@@ -115,18 +118,10 @@ const syncAgents = async ($: EngineInterface) => {
   const live = await getLive($)
   if (running === live.agents) return
   const wasIdle = live.phase === 'idle'
-  await applySettled($, M.agentsChanged(live, await getSession($), running, await $.clock.now()))
+  const r = M.agentsChanged(live, await getSession($), running, await $.clock.now())
+  await applySettled($, r)
+  await trace($, 'agents', `${live.agents} -> ${running}${r.becameIdle ? ', Claude done' : ''}`)
   if (wasIdle && running > 0) await scheduleOffer($)
-}
-
-/** A drawn control shows pushed-in for a moment after a click. */
-const PRESSABLE = new Set(['up', 'down', 'left', 'right', 'a', 'b', 'select', 'start'])
-const flashPressed = async ($: EngineInterface, id: string) => {
-  const at = await $.clock.now()
-  await $.state.set(pressedRef, { id, at } satisfies Pressed)
-  $.clock.after(160, async () => {
-    if ((await $.state.get(pressedRef)).value?.at === at) await $.state.set(pressedRef, null)
-  })
 }
 
 const logClick = async ($: EngineInterface, entry: Omit<ClickLog, 'at'>) => {
@@ -134,19 +129,70 @@ const logClick = async ($: EngineInterface, entry: Omit<ClickLog, 'at'>) => {
   await $.store.set(CLICK_LOG_KEY, [...log, { at: await $.clock.now(), ...entry }].slice(-30))
 }
 
-const attention = async ($: EngineInterface) => {
+/** Appends to the debug timeline: the event and the state right after it. */
+const trace = async ($: EngineInterface, event: string, note?: string) => {
+  const live = await getLive($)
+  const entry: TraceEntry = { at: await $.clock.now(), event, phase: live.phase, agents: live.agents, isTurnRunning: live.isTurnRunning, testMode: live.testMode, ...(note ? { note } : {}) }
+  const log = ((await $.store.get(TRACE_KEY)) as TraceEntry[] | undefined) ?? []
+  await $.store.set(TRACE_KEY, [...log, entry].slice(-80))
+}
+
+const setTestMode = async ($: EngineInterface, on: boolean) => {
+  await setLive($, l => ({ ...l, testMode: on }))
+  await trace($, on ? 'test-mode on' : 'test-mode off')
+}
+
+const attention = async ($: EngineInterface, why: string) => {
   await setLive($, M.needsAttention)
   await mutate($, M.pauseAll)
+  await trace($, 'needs-you', why)
+}
+
+/** The self-test tool's answer: the live state, the timeline, and an action's effect. */
+const debugTool = async ($: EngineInterface, input: unknown): Promise<string> => {
+    const action = String((input as { action?: unknown }).action ?? 'status')
+    if (action === 'test_on' || action === 'test_off') await setTestMode($, action === 'test_on')
+    if (action === 'banner_done' || action === 'banner_needs_you' || action === 'banner_clear') {
+      await setLive($, l => ({ ...l, banner: action === 'banner_done' ? 'done' : action === 'banner_needs_you' ? 'needs-you' : null }))
+      await trace($, action)
+    }
+    await syncAgents($).catch(() => undefined)
+    const save = await getSave($)
+    const result = {
+      build: BUILD,
+      live: await getLive($),
+      session: { ...(await getSession($)), files: undefined },
+      agentList: (await $.agent.list()).map(a => ({ id: a.id, status: a.status, description: a.description })),
+      paneOpen: await isPaneOpen($),
+      save: { screen: save.screen, g2048: save.g2048 && { score: save.g2048.score, moves: save.g2048.moves }, mines: save.mines?.status ?? null, crossword: save.crossword?.puzzleId ?? null, scores: save.scores },
+      timeline: (((await $.store.get(TRACE_KEY)) as TraceEntry[] | undefined) ?? []).slice(-25),
+      clickLog: (((await $.store.get(CLICK_LOG_KEY)) as ClickLog[] | undefined) ?? []).slice(-10),
+    }
+    return JSON.stringify(result, null, 1)
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'games', description: 'Open the While-You-Wait arcade (playable while Claude works)' })
+    await $.command.register({ name: 'games', description: 'Open the While-You-Wait arcade (playable while Claude works). /games test toggles test mode.', argumentHint: '[test]' })
+    await $.tool.register({
+      name: 'debug',
+      description:
+        "Self-test for the while-you-wait arcade plugin: read its live state (phase, running agents, test mode, this session's stats, the save) and its recent event timeline; switch test mode on or off; or show a banner to check how it looks. Use only when checking or debugging the arcade.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['status', 'test_on', 'test_off', 'banner_done', 'banner_needs_you', 'banner_clear'] },
+        },
+        required: ['action'],
+      },
+    })
     // A hot reload fires this again mid-session: keep what $.state already holds.
     if ((await $.state.get(saveRef)).version === 0) await $.state.set(saveRef, M.loadSave(await readStore($)))
     if ((await $.state.get(sessionRef)).version === 0) await $.state.set(sessionRef, M.freshSession())
     if ((await $.state.get(liveRef)).version === 0) await $.state.set(liveRef, M.freshLive())
     else await scheduleOffer($)
+    await syncAgents($).catch(() => undefined) // a reload mid-run must pick up agents already running
+    await trace($, 'session.start', `build ${BUILD}`)
     // Background agents end on their own time: recount them every few seconds while any run.
     $.clock.every(AGENT_POLL_MS, async () => {
       if ((await getLive($)).agents > 0) await syncAgents($).catch(() => undefined)
@@ -154,14 +200,22 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'games' }, async $ => {
+  on('command.run', { command: 'games' }, async ($, e) => {
+    const arg = e.args.trim().toLowerCase()
+    if (arg.startsWith('test')) {
+      const isOn = arg === 'test on' ? true : arg === 'test off' ? false : !(await getLive($)).testMode
+      await setTestMode($, isOn)
+      await refresh($)
+      await $.ui.open({ id: PANE, title: TITLE })
+      return { text: isOn ? 'Arcade test mode ON: playable anytime, this session only. /games test turns it off.' : 'Arcade test mode OFF: playable only while Claude works.' }
+    }
     await refresh($)
     await $.ui.open({ id: PANE, title: TITLE })
     const live = await getLive($)
     return {
       text:
-        live.phase === 'working'
-          ? 'Arcade open. Claude is working: play away.'
+        live.phase === 'working' || live.testMode
+          ? 'Arcade open. Play away.'
           : "Arcade open. Claude's resting, so it's locked. Go ship something.",
     }
   })
@@ -169,6 +223,7 @@ export const register: Register = on => {
   on('turn.start', async ($, e, next) => {
     const now = await $.clock.now()
     await setLive($, l => M.turnStarted(l, e.turnId, now))
+    await trace($, 'turn.start')
     await refresh($)
     $.ui.status(undefined)
     await scheduleOffer($)
@@ -178,6 +233,7 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) {
       // An agent's turn, not yours: it may have been the last one still running.
+      await trace($, 'agent turn.complete', e.agentId)
       await syncAgents($).catch(() => undefined)
       return next(e)
     }
@@ -185,14 +241,16 @@ export const register: Register = on => {
     const done = M.turnCompleted(await getLive($), await getSession($), await $.clock.now(), e.reason === 'answer')
     await applySettled($, done)
     if (!done.becameIdle) await mutate($, M.pauseAll) // your turn's over: freeze clocks until you play again
+    await trace($, 'turn.complete', done.becameIdle ? "Claude's done" : `still busy: ${done.live.agents} agents`)
     return next(e)
   })
 
   // Observers, not guards: if one fails, whatever it watched goes on untouched.
   on('tool.call', async ($, e, next) => {
+    if (String(e.tool) === DEBUG_TOOL) return { result: await debugTool($, e) } as Awaited<ReturnType<typeof next>>
     const path = (e as { file_path?: unknown; notebook_path?: unknown }).file_path ?? (e as { notebook_path?: unknown }).notebook_path
     await setSession($, t => M.toolCalled(t, String(e.tool), typeof path === 'string' ? path : undefined))
-    if (String(e.tool) === 'AskUserQuestion') await attention($)
+    if (String(e.tool) === 'AskUserQuestion') await attention($, 'AskUserQuestion')
     const ran = await next(e)
     // Any permission prompt or question for this call has been answered by now.
     await setLive($, M.attentionCleared)
@@ -201,12 +259,12 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('classic.PermissionRequest', async ($, e, next) => {
-    await attention($)
+    await attention($, `permission: ${e.tool_name}`)
     return next(e)
   }).catch(($, e, next) => next(e))
 
   on('classic.Notification', async ($, e, next) => {
-    if (e.notification_type === 'permission_prompt' || e.notification_type === 'elicitation_dialog') await attention($)
+    if (e.notification_type === 'permission_prompt' || e.notification_type === 'elicitation_dialog') await attention($, e.notification_type)
     return next(e)
   }).catch(($, e, next) => next(e))
 
@@ -217,8 +275,6 @@ export const register: Register = on => {
     if (post.type === 'press') {
       await logClick($, { press: post.press ? post.press.kind : 'nothing', ...post.raw })
       if (!post.press) return next(e)
-      const id = post.press.kind === 'dir' ? post.press.dir : post.press.kind
-      if (PRESSABLE.has(id)) await flashPressed($, id)
     }
     const onScreen = post.type === 'press' && post.press !== null && ['lcd', 'cell', 'row', 'header'].includes(post.press.kind)
     if (onScreen && live.phase === 'attention') {
@@ -247,11 +303,10 @@ export const register: Register = on => {
     const live = await getLive($)
     const save = await getSave($)
     const session = await getSession($)
-    const pressed = (await $.state.get(pressedRef)).value ?? null
     const lcd: Lcd = (await $.state.get(lcdRef)).value ?? { hasFailed: false }
     return drawPane(
-      { Box: els.Box, Text: els.Text, Button: els.Button, ...('Client' in els ? { Client: els.Client } : {}), ...('Svg' in els ? { Svg: els.Svg } : {}) },
-      { live, save, session, pressed: pressed?.id ?? null, now: await $.clock.now(), puzzles: PUZZLES, useClient: e.surface === 'desktop' && !lcd.hasFailed },
+      { Box: els.Box, Text: els.Text, Button: els.Button, ...('Client' in els ? { Client: els.Client } : {}), ...('Svg' in els ? { Svg: els.Svg } : {}), ...('Input' in els ? { Input: els.Input } : {}) },
+      { live, save, session, now: await $.clock.now(), puzzles: PUZZLES, useClient: e.surface === 'desktop' && !lcd.hasFailed },
       {
         send: input => void send($, input),
         jumpBack: () => void $.ui.close({ id: PANE }),

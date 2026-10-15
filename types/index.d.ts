@@ -57,10 +57,11 @@ export type Live = {
   offeredFor: number | null // the busySince the pane already offered itself for
   banner: Banner
   playedThisTurn: boolean
+  testMode: boolean // /games test: playable whatever Claude is doing; this session only
 }
 
-/** A drawn control that was just pressed: drawn pushed-in for a moment. */
-export type Pressed = { id: string; at: number } | null
+/** One line of the debug timeline (store key debug-timeline): what happened, and the state after. */
+export type TraceEntry = { at: number; event: string; phase: Phase; agents: number; isTurnRunning: boolean; testMode: boolean; note?: string }
 
 /** One raw click on the handheld, kept so a click that lands wrong can be diagnosed. */
 export type ClickLog = { at: number; press: string; x: number; y: number; fx: number | null; fy: number | null; columns: number; rows: number }
@@ -99,6 +100,6 @@ export type Lcd = { hasFailed: boolean }
 
 declare module 'claude-code' {
   interface PluginState {
-    'while-you-wait': { live: Live; session: SessionStats; save: Save; lcd: Lcd; pressed: Pressed }
+    'while-you-wait': { live: Live; session: SessionStats; save: Save; lcd: Lcd }
   }
 }
