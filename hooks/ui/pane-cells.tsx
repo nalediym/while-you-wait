@@ -32,7 +32,13 @@ export type PaneView = {
   useClient: boolean
 }
 
-export type PaneActions = { send: (input: Input) => void; jumpBack: () => void }
+export type PaneActions = {
+  send: (input: Input) => void
+  jumpBack: () => void
+  /** The keyboard box changed (a key typed or erased), or Enter was pressed in it. */
+  typed: (value: string) => void
+  entered: (value: string) => void
+}
 
 export const drawCellsPane = (els: PaneElements, view: PaneView, act: PaneActions): RenderElement => {
   const { Box, Text, Button } = els

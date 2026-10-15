@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 import * as M from '../hooks/model'
-import { keyToInput } from '../hooks/ui/keys'
+import { boxDelta, boxInputs, keyToInput } from '../hooks/ui/keys'
 import { PUZZLES } from '../hooks/games/puzzles'
 import { hitTest } from '../hooks/ui/grid'
 
@@ -86,6 +86,26 @@ describe('model', () => {
     const s = M.freshSave()
     const idle = { ...M.freshLive(), testMode: true }
     expect(M.act(s, { kind: 'open', screen: '2048' }, idle, T0, PUZZLES).screen).toBe('2048')
+  })
+
+  test('keyboard box: one new key per change, whether the box clears or keeps its text', () => {
+    // A box that clears after each key: every change is one key, repeats included.
+    expect(boxDelta('', 'd')).toEqual({ typed: 'd', erased: 0 })
+    expect(boxDelta('d', 'd')).toEqual({ typed: 'd', erased: 0 })
+    expect(boxDelta('d', 's')).toEqual({ typed: 's', erased: 0 })
+    // A box that keeps its text: each change adds to it, or backspaces.
+    expect(boxDelta('dd', 'dds')).toEqual({ typed: 's', erased: 0 })
+    expect(boxDelta('dds', 'dd')).toEqual({ typed: '', erased: 1 })
+    expect(boxDelta('ab', 'abcd')).toEqual({ typed: 'cd', erased: 0 }) // a paste, or keys faster than a frame
+  })
+
+  test('keyboard box inputs per screen: WASD moves, letters type in the crossword, backspace erases', () => {
+    expect(boxInputs('2048', '', 'w')).toEqual([{ kind: 'dir', dir: 'up' }])
+    expect(boxInputs('mines', 'w', 'wz')).toEqual([{ kind: 'a' }])
+    expect(boxInputs('mines', '', 'x')).toEqual([{ kind: 'b' }])
+    expect(boxInputs('crossword', 'ca', 'cat')).toEqual([{ kind: 'letter', ch: 't' }])
+    expect(boxInputs('crossword', 'cat', 'ca')).toEqual([{ kind: 'erase' }])
+    expect(boxInputs('menu', '', 'q')).toEqual([])
   })
 
   test('keys: WASD moves except in the crossword, where letters type', () => {

@@ -8,7 +8,7 @@ import type { ClickLog, Lcd, Live, Save, SessionStats, TraceEntry } from '../typ
 import { PUZZLES } from './games/puzzles'
 import type { Input } from './model'
 import * as M from './model'
-import { keyToInput } from './ui/keys'
+import { boxInputs, keyToInput } from './ui/keys'
 import { drawPane } from './ui/pane'
 import type { ScreenPost } from './ui/screen'
 import type { PadPost } from './ui/pad'
@@ -24,7 +24,7 @@ const sessionRef = { plugin: 'while-you-wait', key: 'session' } as const
 const CLICK_LOG_KEY = 'click-log' // the last screen taps, raw, for diagnosing taps that land wrong
 const TRACE_KEY = 'debug-timeline' // the last events and the state after each: what the self-test reads
 const AGENT_POLL_MS = 3_000
-export const BUILD = '0.3.1' // keep in step with plugin.json; the timeline records which build loaded
+export const BUILD = '0.3.2' // keep in step with plugin.json; the timeline records which build loaded
 const DEBUG_TOOL = 'mcp__while-you-wait__debug'
 const lcdRef = { plugin: 'while-you-wait', key: 'lcd' } as const
 
@@ -128,6 +128,26 @@ const scheduleOffer = async ($: EngineInterface) => {
   if (live.phase !== 'working' || live.busySince === null || live.offeredFor === live.busySince) return
   const wait = Math.max(0, live.busySince + M.OFFER_AFTER_MS - (await $.clock.now()))
   $.clock.after(wait, () => void offer($))
+}
+
+/** What the keyboard box last held, per screen: each change is read against it. */
+let boxText = ''
+let boxScreen = ''
+
+const typedInBox = async ($: EngineInterface, value: string, isEnter: boolean) => {
+  const screen = (await getSave($)).screen
+  if (screen !== boxScreen) {
+    boxScreen = screen
+    boxText = ''
+  }
+  // Enter sends the box's text as it stands: only new keys in it count, then A.
+  const inputs = isEnter && value === boxText ? [] : boxInputs(screen, boxText, value)
+  boxText = value
+  for (const input of inputs) await send($, input)
+  if (isEnter) {
+    boxText = ''
+    await send($, { kind: 'a' })
+  }
 }
 
 /** One input from a key, a tap or a button. Ignored unless Claude is working. */
@@ -350,6 +370,8 @@ export const register: Register = on => {
       {
         send: input => void send($, input),
         jumpBack: () => void $.ui.close({ id: PANE }),
+        typed: value => void typedInBox($, value, false),
+        entered: value => void typedInBox($, value, true),
       },
     )
   })

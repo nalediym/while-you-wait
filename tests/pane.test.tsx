@@ -189,6 +189,27 @@ describe('the handheld on desktop', () => {
     expect(await ui.find({ key: 'jump-back' })).toBeDefined()
   })
 
+  test('the keyboard box plays every game with WASD, Z, X, N and Enter', async ($, on) => {
+    mock.clock(on, { now: T0 })
+    const h = harness(on)
+    await startSession($)
+    const ui = await mountPane($)
+    await startTurn($, 't1')
+    // Menu: S moves down, Enter plays the game under the cursor.
+    await ui.input({ key: 'keys', text: 's', kind: 'change' })
+    await ui.input({ key: 'keys', text: 'ss', kind: 'change' }) // a box that keeps its text
+    await ui.input({ key: 'keys', text: 'ss', kind: 'submit' })
+    expect(await alt(ui)).toMatch(/Crossword/)
+    await ui.press({ key: 'btn-select' })
+    await ui.press({ key: 'open-2048' })
+    // 2048: a box that clears after each key, the same key twice still counts twice.
+    const before = (h.store.get('save-v2') as Save).g2048!.moves
+    for (const k of ['a', 'w', 'd', 's', 'a', 'a', 'w', 'w']) await ui.input({ key: 'keys', text: k, kind: 'change' })
+    expect((h.store.get('save-v2') as Save).g2048!.moves).toBeGreaterThan(before)
+    await ui.input({ key: 'keys', text: 'n', kind: 'change' })
+    expect((h.store.get('save-v2') as Save).g2048!.moves).toBe(0) // N = new board
+  })
+
   test('race: a turn starting as the last agent finishes stays a running turn (seen live)', async ($, on) => {
     const clock = mock.clock(on, { now: T0 })
     const h = harness(on)
@@ -240,7 +261,7 @@ describe('the handheld on desktop', () => {
     const callTool = $.tool.call as unknown as (e: object) => Promise<{ result?: unknown }>
     const ran = await callTool({ tool: 'mcp__while-you-wait__debug', tool_use_id: 'd1', action: 'status' })
     const report = JSON.parse(String(ran.result))
-    expect(report.build).toBe('0.3.1')
+    expect(report.build).toBe('0.3.2')
     expect(report.live).toMatchObject({ phase: 'working', agents: 1, isTurnRunning: true })
     expect(report.timeline.map((t: { event: string }) => t.event)).toEqual(expect.arrayContaining(['session.start', 'turn.start', 'agents']))
     const on2 = JSON.parse(String((await callTool({ tool: 'mcp__while-you-wait__debug', tool_use_id: 'd2', action: 'test_on' })).result))
@@ -265,7 +286,7 @@ describe('the handheld on desktop', () => {
     await ui.press({ key: 'open-crossword' })
     expect(await alt(ui)).toMatch(/Crossword cw-001/)
     await clickAt(ui, LCD.x + 28 + 21 + 10, LCD.y + 4 + 10) // tap row 0, col 1
-    await ui.input({ key: 'letters', text: 'q', kind: 'change' }) // the typing box
+    await ui.input({ key: 'keys', text: 'q', kind: 'change' }) // the keyboard box
     expect(await alt(ui)).toMatch(/Crossword cw-001: Q/)
     await ui.press({ key: 'btn-b' }) // erase
     expect(await alt(ui)).toMatch(/Crossword cw-001: \./)

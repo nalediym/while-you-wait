@@ -52,7 +52,7 @@ test('snapshots', { timeoutMs: 20_000 }, async ($: Engine, on) => {
   await snap('mines')
   await button('btn-select')
   await button('open-crossword')
-  await ui.input({ key: 'letters', text: 'sho', kind: 'change' })
+  await ui.input({ key: 'keys', text: 'sho', kind: 'change' })
   await snap('crossword')
   await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: {} } as never)
   await snap('needs-you')

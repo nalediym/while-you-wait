@@ -1,6 +1,6 @@
 {
   "name": "while-you-wait",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "A tiny Game Boy-style arcade in a side pane, playable only while Claude is working.",
   "author": { "name": "nalediym" },
   "repository": "https://github.com/nalediym/while-you-wait",

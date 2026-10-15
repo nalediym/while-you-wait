@@ -24,3 +24,27 @@ export const keyToInput = (screen: Screen, raw: string): Input | undefined => {
   if (key === 'm') return { kind: 'select' }
   return undefined
 }
+
+/**
+ * What one change to the keyboard box means: the keys typed since the last
+ * change, or how many were erased. Works whether the surface clears the box
+ * after each render (every change is one new key) or keeps the text (each
+ * change adds to, or backspaces from, what came before).
+ */
+export const boxDelta = (prev: string, next: string): { typed: string; erased: number } => {
+  if (next.length > prev.length) return { typed: next.startsWith(prev) ? next.slice(prev.length) : next.slice(-1), erased: 0 }
+  if (next.length < prev.length) return prev.startsWith(next) ? { typed: '', erased: prev.length - next.length } : { typed: next.slice(-1), erased: 0 }
+  return { typed: next.slice(-1), erased: 0 } // same length: the box was cleared, then one key typed
+}
+
+/** The inputs one change to the keyboard box makes, on this screen. */
+export const boxInputs = (screen: Screen, prev: string, next: string): Input[] => {
+  const { typed, erased } = boxDelta(prev, next)
+  const out: Input[] = []
+  for (let i = 0; i < erased; i++) out.push(screen === 'crossword' ? { kind: 'erase' } : { kind: 'b' })
+  for (const ch of typed) {
+    const input = ch === ' ' ? keyToInput(screen, 'space') : keyToInput(screen, ch)
+    if (input) out.push(input)
+  }
+  return out
+}
