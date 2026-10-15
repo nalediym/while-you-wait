@@ -8,7 +8,7 @@ const T0 = new Date(2026, 9, 15, 12).getTime()
 
 describe('model', () => {
   test('nothing is playable unless Claude is working', () => {
-    const s = M.freshSave(T0)
+    const s = M.freshSave()
     expect(M.act(s, { kind: 'open', screen: '2048' }, M.freshLive(), T0, PUZZLES)).toBe(s)
     const attention = { ...M.turnStarted(M.freshLive(), 't', T0), phase: 'attention' as const }
     expect(M.act(s, { kind: 'open', screen: '2048' }, attention, T0, PUZZLES)).toBe(s)
@@ -16,26 +16,32 @@ describe('model', () => {
     expect(M.act(s, { kind: 'open', screen: '2048' }, working, T0, PUZZLES).screen).toBe('2048')
   })
 
-  test('turns, work time and while-you-waited are tallied; interrupts are not shipped tasks', () => {
+  test('turns, work time and while-you-waited are tallied for the session; interrupts are not shipped tasks', () => {
     let live = { ...M.turnStarted(M.freshLive(), 't1', T0), playedThisTurn: true }
-    let { save, live: after } = M.turnCompleted(live, M.freshSave(T0), T0 + 90_000)
-    expect(save.stats.today).toMatchObject({ turns: 1, turnsWhileWaited: 1, workMs: 90_000 })
+    let { session, live: after } = M.turnCompleted(live, M.freshSession(), T0 + 90_000)
+    expect(session).toMatchObject({ turns: 1, turnsWhileWaited: 1, workMs: 90_000 })
     expect(after).toMatchObject({ phase: 'idle', banner: 'done' })
     live = M.turnStarted(after, 't2', T0 + 100_000)
-    save = M.turnCompleted(live, save, T0 + 110_000, false).save
-    expect(save.stats.allTime.turns).toBe(1)
-    expect(save.stats.allTime.workMs).toBe(100_000)
+    session = M.turnCompleted(live, session, T0 + 110_000, false).session
+    expect(session.turns).toBe(1)
+    expect(session.workMs).toBe(100_000)
   })
 
-  test('tool calls count, and each edited file counts once a day', () => {
-    let s = M.freshSave(T0)
-    s = M.toolCalled(s, 'Edit', '/a.ts', T0)
-    s = M.toolCalled(s, 'Write', '/a.ts', T0)
-    s = M.toolCalled(s, 'Bash', undefined, T0)
-    expect(s.stats.today).toMatchObject({ toolCalls: 3, filesEdited: 1 })
-    s = M.toolCalled(s, 'Edit', '/a.ts', T0 + 86_400_000)
-    expect(s.stats.today).toMatchObject({ toolCalls: 1, filesEdited: 1 }) // new day
-    expect(s.stats.allTime).toMatchObject({ toolCalls: 4, filesEdited: 2 })
+  test('tool calls count, and each edited file counts once', () => {
+    let t = M.freshSession()
+    t = M.toolCalled(t, 'Edit', '/a.ts')
+    t = M.toolCalled(t, 'Write', '/a.ts')
+    t = M.toolCalled(t, 'Bash', undefined)
+    t = M.toolCalled(t, 'Edit', '/b.ts')
+    expect(t).toMatchObject({ toolCalls: 4, filesEdited: 2 })
+  })
+
+  test('the save never holds stats', () => {
+    expect(Object.keys(M.freshSave())).not.toContain('stats')
+    const v1 = { v: 1, screen: '2048', g2048: { board: [], score: 9 }, scores: { best2048Tile: 64 }, stats: { today: { turns: 99 } } }
+    const loaded = M.loadSave(v1)
+    expect(Object.keys(loaded)).not.toContain('stats')
+    expect(loaded).toMatchObject({ v: 2, screen: '2048', scores: { best2048Tile: 64 } })
   })
 
   test('the pane offers itself once per turn, after 60s', () => {
@@ -46,14 +52,14 @@ describe('model', () => {
   })
 
   test('the headline leads with Claude\'s work', () => {
-    const t = M.freshSave(T0).stats.today
+    const t = M.freshSession()
     expect(M.headline({ ...t, turns: 14, boardsCleared: 6 })).toBe('Claude shipped 14 tasks while you cleared 6 boards.')
-    expect(M.headline({ ...t, turns: 1 })).toBe('Claude shipped 1 task today. Nice delegating.')
+    expect(M.headline({ ...t, turns: 1 })).toBe('Claude shipped 1 task this session. Nice delegating.')
   })
 
   test('a corrupt or old store value starts fresh', () => {
-    expect(M.loadSave('garbage', T0).v).toBe(1)
-    expect(M.loadSave({ v: 0 }, T0).screen).toBe('menu')
+    expect(M.loadSave('garbage').v).toBe(2)
+    expect(M.loadSave({ v: 0 }).screen).toBe('menu')
   })
 
   test('keys: WASD moves except in the crossword, where letters type', () => {
@@ -66,17 +72,19 @@ describe('model', () => {
   test('solving a crossword records it and moves on to the next unsolved one', () => {
     const p = PUZZLES[0]!
     const live = M.turnStarted(M.freshLive(), 't', T0)
-    let s = M.act(M.freshSave(T0), { kind: 'open', screen: 'crossword' }, live, T0, PUZZLES)
+    let s = M.act(M.freshSave(), { kind: 'open', screen: 'crossword' }, live, T0, PUZZLES)
     expect(s.crossword?.puzzleId).toBe(p.id)
+    let finished = 0
     for (let i = 0; i < 25; i++) {
       const ch = p.grid[Math.floor(i / 5)]![i % 5]!
       if (ch === '#') continue
-      s = { ...s, crossword: { ...s.crossword!, cursor: i } }
-      s = M.act(s, { kind: 'letter', ch }, live, T0, PUZZLES)
+      const before = { ...s, crossword: { ...s.crossword!, cursor: i } }
+      s = M.act(before, { kind: 'letter', ch }, live, T0, PUZZLES)
+      finished += M.boardsFinished(before, s)
     }
+    expect(finished).toBe(1)
     expect(s.crossword?.isSolved).toBe(true)
     expect(s.scores.crosswordsSolved).toEqual([p.id])
-    expect(s.stats.today.boardsCleared).toBe(1)
     s = M.act(s, { kind: 'nextPuzzle' }, live, T0, PUZZLES)
     expect(s.crossword?.puzzleId).toBe(PUZZLES[1]!.id)
   })

@@ -5,7 +5,7 @@
 
 import type { BoxProps, ButtonProps, ClientProps, ElementConstructor, RenderElement, SvgProps, TextProps } from 'claude-code'
 import { layout } from '../games/crossword'
-import { fmtDuration, headline, plural } from '../model'
+import { headline, plural } from '../model'
 import { drawDevice, svgAlt } from './device'
 import { drawCellsPane } from './pane-cells'
 import type { PaneActions, PaneView } from './pane-cells'
@@ -33,8 +33,7 @@ export const drawPane = (els: PaneElements, view: PaneView, act: PaneActions): R
   if (!Svg || !Client || !view.useClient) return drawCellsPane(els, view, act)
   const { live, save } = view
   const { svg, hit } = drawDevice(view)
-  const today = save.stats.today
-  const all = save.stats.allTime
+  const session = view.session
   const crossword = save.screen === 'crossword' && live.phase === 'working' ? view.puzzles.find(p => p.id === save.crossword?.puzzleId) : undefined
 
   return (
@@ -58,10 +57,12 @@ export const drawPane = (els: PaneElements, view: PaneView, act: PaneActions): R
         {live.phase === 'idle' ? (
           <Box flexDirection="column">
             <Text bold wrap="wrap">
-              {headline(today)}
+              {headline(session)}
             </Text>
             <Text dimColor wrap="wrap">
-              {`All-time: ${plural(all.turns, 'task')}, ${fmtDuration(all.workMs)} of Claude's work, ${plural(all.turnsWhileWaited, 'task')} finished while you waited.`}
+              {session.turnsWhileWaited > 0
+                ? `${plural(session.turnsWhileWaited, 'task')} finished while you waited.`
+                : 'Stats count this session only. Your games and bests carry over.'}
             </Text>
             <Text dimColor wrap="wrap">
               The arcade unlocks while Claude is working.

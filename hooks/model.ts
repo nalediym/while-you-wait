@@ -1,15 +1,15 @@
-// The arcade's whole model, pure: what is saved, what the work stats are,
-// and how one input changes things. register.tsx wires events to these
+// The arcade's whole model, pure: what is saved (games and bests), what this
+// session's work stats are, and how one input changes things. register.tsx wires events to these
 // functions; nothing here touches `$`, so all of it is unit-testable.
 
 import * as G2048 from './games/g2048'
 import * as Mines from './games/minesweeper'
 import * as Cw from './games/crossword'
 import type { PuzzleData } from './games/puzzles'
-import type { Dir, Live, Save, Screen, Tally } from '../types'
+import type { Dir, Live, Save, Screen, SessionStats } from '../types'
 import type { Press } from './ui/hit'
 
-export type { Dir, Live, Save, Screen, Tally }
+export type { Dir, Live, Save, Screen, SessionStats }
 
 export type GameId = '2048' | 'mines' | 'crossword'
 
@@ -34,19 +34,16 @@ export const GAMES: readonly { id: GameId; name: string; blurb: string }[] = [
 
 export const OFFER_AFTER_MS = 60_000
 
-const zero = (): Tally => ({ turns: 0, turnsWhileWaited: 0, workMs: 0, toolCalls: 0, filesEdited: 0, boardsCleared: 0 })
-
-export const dayOf = (now: number): string => {
-  const d = new Date(now)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+export const freshSession = (): SessionStats => ({
+  turns: 0, turnsWhileWaited: 0, workMs: 0, toolCalls: 0, filesEdited: 0, boardsCleared: 0, files: [],
+})
 
 export const freshLive = (): Live => ({
   phase: 'idle', turnId: null, turnStartedAt: null, offeredTurnId: null, banner: null, playedThisTurn: false,
 })
 
-export const freshSave = (now: number): Save => ({
-  v: 1,
+export const freshSave = (): Save => ({
+  v: 2,
   screen: 'menu',
   menuCursor: 0,
   g2048: null,
@@ -54,26 +51,27 @@ export const freshSave = (now: number): Save => ({
   crossword: null,
   flagMode: false,
   scores: { best2048Tile: 0, best2048Score: 0, minesFastestMs: [], crosswordsSolved: [] },
-  stats: { day: dayOf(now), today: zero(), allTime: zero(), todayFiles: [] },
 })
 
-/** Accepts whatever the store held; anything unrecognised starts fresh. */
-export const loadSave = (raw: unknown, now: number): Save => {
-  const fresh = freshSave(now)
-  if (typeof raw !== 'object' || raw === null || (raw as { v?: unknown }).v !== 1) return fresh
-  const s = raw as Save
-  return rollDay({ ...fresh, ...s, scores: { ...fresh.scores, ...s.scores }, stats: { ...fresh.stats, ...s.stats } }, now)
-}
-
-/** Starts a new "today" when the date changed. */
-export const rollDay = (s: Save, now: number): Save => {
-  const day = dayOf(now)
-  return s.stats.day === day ? s : { ...s, stats: { ...s.stats, day, today: zero(), todayFiles: [] } }
-}
-
-const bump = (s: Save, now: number, f: (t: Tally) => Partial<Tally>): Save => {
-  const r = rollDay(s, now)
-  return { ...r, stats: { ...r.stats, today: { ...r.stats.today, ...f(r.stats.today) }, allTime: { ...r.stats.allTime, ...f(r.stats.allTime) } } }
+/**
+ * Accepts whatever the store held; anything unrecognised starts fresh. A v1
+ * save (which also kept stats) keeps its games and bests; its stats are dropped.
+ */
+export const loadSave = (raw: unknown): Save => {
+  const fresh = freshSave()
+  const v = typeof raw === 'object' && raw !== null ? (raw as { v?: unknown }).v : undefined
+  if (v !== 1 && v !== 2) return fresh
+  const s = raw as Partial<Save>
+  return {
+    v: 2,
+    screen: s.screen ?? fresh.screen,
+    menuCursor: s.menuCursor ?? 0,
+    g2048: s.g2048 ?? null,
+    mines: s.mines ?? null,
+    crossword: s.crossword ?? null,
+    flagMode: s.flagMode ?? false,
+    scores: { ...fresh.scores, ...s.scores },
+  }
 }
 
 // ── Claude's side: turns, tools, attention ──────────────────────────────
@@ -88,29 +86,29 @@ export const needsAttention = (live: Live): Live =>
 export const attentionCleared = (live: Live): Live =>
   live.phase === 'attention' ? { ...live, phase: 'working', banner: null } : live
 
-/** `didAnswer`: the turn ended with an answer (not an interrupt or an error). */
-export const turnCompleted = (live: Live, save: Save, now: number, didAnswer = true): { live: Live; save: Save } => {
+/** Counts the turn into this session's stats. `didAnswer`: it ended with an answer, not an interrupt or error. */
+export const turnCompleted = (live: Live, session: SessionStats, now: number, didAnswer = true): { live: Live; session: SessionStats } => {
   const ran = live.turnStartedAt === null ? 0 : Math.max(0, now - live.turnStartedAt)
-  const saved = bump(pauseAll(save, now), now, t => ({
-    turns: t.turns + (didAnswer ? 1 : 0),
-    turnsWhileWaited: t.turnsWhileWaited + (live.playedThisTurn ? 1 : 0),
-    workMs: t.workMs + ran,
-  }))
   return {
     live: { ...live, phase: 'idle', turnStartedAt: null, banner: 'done' },
-    save: saved,
+    session: {
+      ...session,
+      turns: session.turns + (didAnswer ? 1 : 0),
+      turnsWhileWaited: session.turnsWhileWaited + (live.playedThisTurn ? 1 : 0),
+      workMs: session.workMs + ran,
+    },
   }
 }
 
 const EDITING = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
-export const toolCalled = (save: Save, tool: string, filePath: string | undefined, now: number): Save => {
-  let s = bump(save, now, t => ({ toolCalls: t.toolCalls + 1 }))
-  if (EDITING.has(tool) && filePath !== undefined && !s.stats.todayFiles.includes(filePath)) {
-    s = bump(s, now, t => ({ filesEdited: t.filesEdited + 1 }))
-    s = { ...s, stats: { ...s.stats, todayFiles: [...s.stats.todayFiles, filePath].slice(-500) } }
+export const toolCalled = (session: SessionStats, tool: string, filePath: string | undefined): SessionStats => {
+  const isNewFile = EDITING.has(tool) && filePath !== undefined && !session.files.includes(filePath)
+  return {
+    ...session,
+    toolCalls: session.toolCalls + 1,
+    ...(isNewFile ? { filesEdited: session.filesEdited + 1, files: [...session.files, filePath].slice(-500) } : {}),
   }
-  return s
 }
 
 export const shouldOffer = (live: Live, now: number): boolean =>
@@ -124,25 +122,25 @@ export const pauseAll = (s: Save, now: number): Save => ({ ...s, mines: s.mines 
 
 // ── Your side: one input ────────────────────────────────────────────────
 
+/** How many boards this change finished: a 2048 that ran out of moves, a mines clear, a solved crossword. */
+export const boardsFinished = (before: Save, after: Save): number =>
+  Number(!!(before.g2048 && after.g2048 && !before.g2048.isOver && after.g2048.isOver)) +
+  Number(!!(after.mines && before.mines?.status !== 'won' && after.mines.status === 'won')) +
+  Number(!!(after.crossword && !before.crossword?.isSolved && after.crossword.isSolved))
+
+/** Updates your bests (kept across sessions) after a change. */
 const recordCleared = (before: Save, after: Save, now: number): Save => {
   let s = after
-  const g0 = before.g2048
   const g1 = after.g2048
-  if (g1) {
-    s = { ...s, scores: { ...s.scores, best2048Tile: Math.max(s.scores.best2048Tile, G2048.bestTile(g1)), best2048Score: Math.max(s.scores.best2048Score, g1.score) } }
-    if (g0 && !g0.isOver && g1.isOver) s = bump(s, now, t => ({ boardsCleared: t.boardsCleared + 1 }))
-  }
-  const m0 = before.mines
+  if (g1) s = { ...s, scores: { ...s.scores, best2048Tile: Math.max(s.scores.best2048Tile, G2048.bestTile(g1)), best2048Score: Math.max(s.scores.best2048Score, g1.score) } }
   const m1 = after.mines
-  if (m1 && m0?.status !== 'won' && m1.status === 'won') {
+  if (m1 && before.mines?.status !== 'won' && m1.status === 'won') {
     const fastest = [...s.scores.minesFastestMs, Mines.elapsed(m1, now)].sort((a, b) => a - b).slice(0, 5)
-    s = bump({ ...s, scores: { ...s.scores, minesFastestMs: fastest } }, now, t => ({ boardsCleared: t.boardsCleared + 1 }))
+    s = { ...s, scores: { ...s.scores, minesFastestMs: fastest } }
   }
-  const c0 = before.crossword
   const c1 = after.crossword
-  if (c1 && !c0?.isSolved && c1.isSolved && !s.scores.crosswordsSolved.includes(c1.puzzleId)) {
-    s = bump({ ...s, scores: { ...s.scores, crosswordsSolved: [...s.scores.crosswordsSolved, c1.puzzleId] } }, now, t => ({ boardsCleared: t.boardsCleared + 1 }))
-  }
+  if (c1 && !before.crossword?.isSolved && c1.isSolved && !s.scores.crosswordsSolved.includes(c1.puzzleId))
+    s = { ...s, scores: { ...s.scores, crosswordsSolved: [...s.scores.crosswordsSolved, c1.puzzleId] } }
   return s
 }
 
@@ -265,9 +263,9 @@ export const fmtClock = (ms: number): string => {
 }
 
 /** The encouraging headline: Claude's work first, your games second. */
-export const headline = (t: Tally): string => {
-  if (t.turns === 0) return 'Nothing shipped yet today. Give Claude something big.'
+export const headline = (t: SessionStats): string => {
+  if (t.turns === 0) return 'Nothing shipped yet this session. Give Claude something big.'
   const shipped = `Claude shipped ${plural(t.turns, 'task')}`
-  if (t.boardsCleared === 0) return `${shipped} today. Nice delegating.`
+  if (t.boardsCleared === 0) return `${shipped} this session. Nice delegating.`
   return `${shipped} while you cleared ${plural(t.boardsCleared, 'board')}.`
 }

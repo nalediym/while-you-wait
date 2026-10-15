@@ -1,6 +1,7 @@
 // The arcade's $.state contract, self-contained. `live` is where Claude is
-// right now; `save` is everything you'd want back next time (mirrored to
-// $.store); `lcd` says whether the desktop's Client LCD works here.
+// right now; `session` is this session's work stats (never stored: a new
+// session starts from zero); `save` is your games and bests, shared by every
+// session through $.store; `lcd` says whether the desktop's Client works here.
 // Game logic and the model import these types from here.
 
 export type Dir = 'up' | 'down' | 'left' | 'right'
@@ -56,16 +57,16 @@ export type Live = {
   playedThisTurn: boolean
 }
 
-export type Tally = {
+/** This session's work, counted from zero when the session starts. */
+export type SessionStats = {
   turns: number // turns Claude completed with an answer
   turnsWhileWaited: number // ...of which you played during
   workMs: number // time Claude spent working
   toolCalls: number
-  filesEdited: number // distinct files, per day
-  boardsCleared: number // games finished: 2048 ended, mines cleared, crossword solved
+  filesEdited: number // distinct files
+  boardsCleared: number // games you finished: 2048 ended, mines cleared, crossword solved
+  files: string[] // the paths behind filesEdited
 }
-
-export type Stats = { day: string; today: Tally; allTime: Tally; todayFiles: string[] }
 
 export type Scores = {
   best2048Tile: number
@@ -74,8 +75,9 @@ export type Scores = {
   crosswordsSolved: string[] // puzzle ids
 }
 
+/** Your games and bests: kept across sessions, shared by all of them. No stats. */
 export type Save = {
-  v: 1
+  v: 2
   screen: Screen
   menuCursor: number
   g2048: G2048 | null
@@ -83,13 +85,12 @@ export type Save = {
   crossword: Crossword | null
   flagMode: boolean
   scores: Scores
-  stats: Stats
 }
 
 export type Lcd = { hasFailed: boolean }
 
 declare module 'claude-code' {
   interface PluginState {
-    'while-you-wait': { live: Live; save: Save; lcd: Lcd }
+    'while-you-wait': { live: Live; session: SessionStats; save: Save; lcd: Lcd }
   }
 }

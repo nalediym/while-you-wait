@@ -12,12 +12,11 @@ import * as M from '../../hooks/model'
 import { drawDevice } from '../../hooks/ui/device'
 
 const T0 = new Date(2026, 9, 15, 15, 30).getTime()
-const base = M.freshSave(T0)
 const save: M.Save = {
-  ...base,
+  ...M.freshSave(),
   scores: { best2048Tile: 512, best2048Score: 6140, minesFastestMs: [72_000, 95_000], crosswordsSolved: ['cw-001', 'cw-002', 'cw-003'] },
-  stats: { ...base.stats, today: { turns: 13, turnsWhileWaited: 5, workMs: 4_380_000, toolCalls: 342, filesEdited: 27, boardsCleared: 6 }, allTime: { turns: 211, turnsWhileWaited: 88, workMs: 61_000_000, toolCalls: 6120, filesEdited: 402, boardsCleared: 97 } },
 }
+const session: M.SessionStats = { ...M.freshSession(), turns: 13, turnsWhileWaited: 5, workMs: 4_380_000, toolCalls: 342, filesEdited: 27, boardsCleared: 6 }
 const working = M.turnStarted(M.freshLive(), 't', T0)
 const idle = M.freshLive()
 
@@ -43,7 +42,7 @@ const states: [string, M.Save, M.Live][] = [
 ]
 const out = process.argv[2] ?? '.preview/devices.html'
 const cards = states.map(([name, s, live]) => {
-  const { svg } = drawDevice({ save: s, live, now: T0 + 42_000, puzzles: PUZZLES })
+  const { svg } = drawDevice({ save: s, live, session, now: T0 + 42_000, puzzles: PUZZLES })
   return `<figure><figcaption>${name} · ${(svg.length / 1024).toFixed(1)} KB</figcaption>${svg.replace(/width="\d+" height="\d+"/, 'width="300"')}</figure>`
 })
 writeFileSync(out, `<!doctype html><meta charset="utf-8"><title>while-you-wait devices</title><style>body{margin:0;padding:20px;background:#1e1e22;font:12px system-ui;color:#999;display:flex;flex-wrap:wrap;gap:24px}figure{margin:0}figcaption{margin-bottom:6px}</style>${cards.join('')}`)

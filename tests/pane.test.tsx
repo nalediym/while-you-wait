@@ -61,7 +61,7 @@ describe('the handheld on desktop', () => {
     // Keys and the drawn D-pad both slide tiles.
     for (const key of ['left', 'up', 'right', 'down', 'a', 'w', 'd', 's']) await ui.key({ key, in: 'pad' })
     await clickAt(ui, CONTROLS.dpad.cx - 15, CONTROLS.dpad.cy)
-    expect((h.store.get('save-v1') as Save).g2048!.moves).toBeGreaterThan(0)
+    expect((h.store.get('save-v2') as Save).g2048!.moves).toBeGreaterThan(0)
 
     // A turn running 60s offers the pane, once.
     expect(h.opened).toEqual([])
@@ -73,11 +73,11 @@ describe('the handheld on desktop', () => {
     // Claude finishes: banner + jump-back button, locked, saved.
     await completeTurn($, 't1')
     expect(await alt(ui)).toMatch(/Claude's resting.*Claude's done/)
-    const saved = h.store.get('save-v1') as Save
+    const saved = h.store.get('save-v2') as Save
     expect(saved.screen).toBe('2048')
-    expect(saved.stats.today.turns).toBe(1)
-    expect(saved.stats.today.turnsWhileWaited).toBe(1)
-    expect(await ui.find({ type: 'Text', text: /Claude shipped 1 task/ })).toBeDefined()
+    expect(Object.keys(saved)).not.toContain('stats') // stats stay in this session
+    expect(await alt(ui)).toMatch(/This session: 1 tasks shipped/)
+    expect(await ui.find({ type: 'Text', text: /Claude shipped 1 task this session/ })).toBeDefined()
     await ui.press({ key: 'jump-back' })
     expect(h.closed).toEqual(['arcade'])
   })
@@ -93,7 +93,7 @@ describe('the handheld on desktop', () => {
     const cell = (col: number, row: number) => ({ x: LCD.x + 17 + col * 14 + 6, y: LCD.y + 14 + row * 14 + 6 })
     await clickAt(ui, cell(4, 4).x, cell(4, 4).y) // first dig is safe
     expect(await alt(ui)).toMatch(/Mines, (playing|won)/)
-    const m = (h.store.get('save-v1') as Save).mines!
+    const m = (h.store.get('save-v2') as Save).mines!
     const hidden = m.revealed.findIndex(open => !open)
     await clickAt(ui, cell(hidden % 9, Math.floor(hidden / 9)).x, cell(hidden % 9, Math.floor(hidden / 9)).y, 'right')
     expect(await alt(ui)).toMatch(/9 flags left/)
@@ -113,12 +113,12 @@ describe('the handheld on desktop', () => {
     await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'rm -rf build' } } as never)
     expect(await alt(ui)).toMatch(/Claude needs you/)
     expect(await ui.find({ key: 'jump-back' })).toBeDefined()
-    expect((h.store.get('save-v1') as Save).mines?.runningSince).toBe(null) // the clock is banked
+    expect((h.store.get('save-v2') as Save).mines?.runningSince).toBe(null) // the clock is banked
     await clickAt(ui, LCD.x + 80, LCD.y + 70)
     expect(h.closed).toEqual(['arcade'])
   })
 
-  test('next session resumes exactly where you left off', async ($, on) => {
+  test('next session resumes your game exactly, with stats starting from zero', async ($, on) => {
     mock.clock(on, { now: T0 })
     const board = [2, 4, 8, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1024]
     harness(on, {
@@ -131,9 +131,29 @@ describe('the handheld on desktop', () => {
     })
     await startSession($)
     const ui = await mountPane($)
-    expect(await ui.find({ type: 'Text', text: /Claude shipped 14 tasks while you cleared 6 boards/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Nothing shipped yet this session/ })).toBeDefined()
     await startTurn($, 't9')
     expect(await alt(ui)).toMatch(/2048, score 777/)
+  })
+
+  test('two sessions share your games without overwriting them; stats stay per session', async ($, on) => {
+    mock.clock(on, { now: T0 })
+    const h = harness(on)
+    await startSession($)
+    const ui = await mountPane($)
+    await startTurn($, 't1')
+    await clickAt(ui, LCD.x + 80, LCD.y + 16 + 10) // open 2048 here
+    const mine = h.store.get('save-v2') as Save
+
+    // Meanwhile you play on in another long session.
+    h.store.set('save-v2', { ...mine, g2048: { ...mine.g2048!, score: 4096, moves: 99 } })
+
+    // This session finishing a turn must not write its stale copy over that game.
+    await completeTurn($, 't1')
+    const saved = h.store.get('save-v2') as Save
+    expect(saved.g2048!.score).toBe(4096)
+    expect(saved.g2048!.moves).toBe(99)
+    expect(await alt(ui)).toMatch(/This session: 1 tasks shipped/)
   })
 
   test('/games opens the pane', async ($, on) => {

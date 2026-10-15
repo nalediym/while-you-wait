@@ -7,7 +7,7 @@ import * as G2048 from '../games/g2048'
 import * as Mines from '../games/minesweeper'
 import { entryAt, layout } from '../games/crossword'
 import type { PuzzleData } from '../games/puzzles'
-import type { Input, Live, Save, Tally } from '../model'
+import type { Input, Live, Save, SessionStats } from '../model'
 import { GAMES, MENU, fmtClock, fmtDuration, headline, plural } from '../model'
 import { drawGrid } from './draw-grid'
 import type { Grid } from './grid'
@@ -24,6 +24,8 @@ export type PaneElements = {
 export type PaneView = {
   save: Save
   live: Live
+  /** This session's work stats (never stored). */
+  session: SessionStats
   now: number
   puzzles: readonly PuzzleData[]
   /** Draw the handheld (Svg + input pad) rather than plain Boxes; the LCD Client too. */
@@ -51,7 +53,7 @@ export const drawCellsPane = (els: PaneElements, view: PaneView, act: PaneAction
     )
 
   let body: RenderElement
-  if (live.phase === 'idle') body = drawResting(els, save.stats.today, save.stats.allTime, view)
+  if (live.phase === 'idle') body = drawResting(els, view)
   else if (live.phase === 'attention') body = drawPaused(els, view)
   else body = drawScreen(els, view, act)
 
@@ -103,7 +105,7 @@ const drawScreen = (els: PaneElements, view: PaneView, act: PaneActions): Render
     case 'scores':
       return (
         <Box flexDirection="column" paddingY={1}>
-          {drawStats(els, save.stats.today, save.stats.allTime, view)}
+          {drawStats(els, view)}
           <Button key="back" onPress={() => act.send({ kind: 'select' })}>
             ◀ Back
           </Button>
@@ -221,7 +223,7 @@ const drawPaused = (els: PaneElements, view: PaneView): RenderElement => {
   )
 }
 
-const drawResting = (els: PaneElements, today: Tally, allTime: Tally, view: PaneView): RenderElement => {
+const drawResting = (els: PaneElements, view: PaneView): RenderElement => {
   const { Box, Text } = els
   return (
     <Box flexDirection="column" paddingY={1}>
@@ -230,36 +232,26 @@ const drawResting = (els: PaneElements, today: Tally, allTime: Tally, view: Pane
       </Text>
       <Text color={GB.dark} wrap="wrap">— go ship something. ✦</Text>
       <Box marginTop={1} flexDirection="column">
-        {drawStats(els, today, allTime, view)}
+        {drawStats(els, view)}
       </Box>
     </Box>
   )
 }
 
-// Work stats first and loud; game stats after and quiet.
-const drawStats = ({ Box, Text }: PaneElements, today: Tally, allTime: Tally, view: PaneView): RenderElement => {
+// Work stats first and loud; game bests after and quiet.
+const drawStats = ({ Box, Text }: PaneElements, view: PaneView): RenderElement => {
   const sc = view.save.scores
-  const work = (t: Tally) =>
-    `${plural(t.turns, 'task')} · ${fmtDuration(t.workMs)} of work · ${plural(t.toolCalls, 'tool call')} · ${plural(t.filesEdited, 'file')} edited`
+  const t = view.session
   return (
     <Box flexDirection="column">
       <Text color={GB.darkest} bold wrap="wrap">
-        {headline(today)}
+        {headline(t)}
       </Text>
       <Text color={GB.darkest} bold>
-        TODAY
+        THIS SESSION
       </Text>
       <Text color={GB.darkest} wrap="wrap">
-        {work(today)}
-      </Text>
-      <Text color={GB.darkest} bold>
-        ALL-TIME
-      </Text>
-      <Text color={GB.darkest} wrap="wrap">
-        {work(allTime)}
-      </Text>
-      <Text color={GB.dark} wrap="wrap">
-        {`Claude finished ${plural(allTime.turnsWhileWaited, 'task')} while you waited.`}
+        {`${plural(t.turns, 'task')} · ${fmtDuration(t.workMs)} of work · ${plural(t.toolCalls, 'tool call')} · ${plural(t.filesEdited, 'file')} edited`}
       </Text>
       <Box marginTop={1} flexDirection="column">
         <Text color={GB.dark}>BESTS</Text>
@@ -270,7 +262,7 @@ const drawStats = ({ Box, Text }: PaneElements, today: Tally, allTime: Tally, vi
           {`Mines ${sc.minesFastestMs.length ? sc.minesFastestMs.slice(0, 3).map(fmtClock).join(' / ') : '—'}`}
         </Text>
         <Text color={GB.dark} wrap="wrap">
-          {`Crosswords ${sc.crosswordsSolved.length}/${view.puzzles.length} · boards today ${today.boardsCleared}`}
+          {`Crosswords ${sc.crosswordsSolved.length}/${view.puzzles.length} · boards this session ${t.boardsCleared}`}
         </Text>
       </Box>
     </Box>

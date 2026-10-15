@@ -5,7 +5,7 @@
 import { update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Lcd, Live, Save } from '../types'
+import type { Lcd, Live, Save, SessionStats } from '../types'
 import { PUZZLES } from './games/puzzles'
 import type { Input } from './model'
 import * as M from './model'
@@ -16,21 +16,48 @@ import type { PadPost } from './ui/pad'
 
 const PANE = 'arcade'
 const TITLE = 'While You Wait'
-const STORE_KEY = 'save-v1'
+const STORE_KEY = 'save-v2' // games and bests only; stats are never stored
+const OLD_STORE_KEY = 'save-v1' // v1 also kept stats; its games and bests carry over
 
 const liveRef = { plugin: 'while-you-wait', key: 'live' } as const
 const saveRef = { plugin: 'while-you-wait', key: 'save' } as const
+const sessionRef = { plugin: 'while-you-wait', key: 'session' } as const
 const lcdRef = { plugin: 'while-you-wait', key: 'lcd' } as const
 
 const getLive = async ($: EngineInterface): Promise<Live> => (await $.state.get(liveRef)).value ?? M.freshLive()
-const getSave = async ($: EngineInterface): Promise<Save> => (await $.state.get(saveRef)).value ?? M.freshSave(await $.clock.now())
+const getSave = async ($: EngineInterface): Promise<Save> => (await $.state.get(saveRef)).value ?? M.freshSave()
+const getSession = async ($: EngineInterface): Promise<SessionStats> => (await $.state.get(sessionRef)).value ?? M.freshSession()
 
 const setLive = ($: EngineInterface, f: (l: Live) => Live) => update($, liveRef, l => f(l ?? M.freshLive()))
-const setSave = async ($: EngineInterface, f: (s: Save) => Save, persist = false) => {
-  const now = await $.clock.now()
-  await update($, saveRef, s => f(s ?? M.freshSave(now)))
-  if (persist) await $.store.set(STORE_KEY, await getSave($))
+/** This session's stats: $.state only, so they last the session (and a hot reload) and no longer. */
+const setSession = ($: EngineInterface, f: (s: SessionStats) => SessionStats) => update($, sessionRef, s => f(s ?? M.freshSession()))
+
+const readStore = async ($: EngineInterface): Promise<unknown> => (await $.store.get(STORE_KEY)) ?? (await $.store.get(OLD_STORE_KEY))
+
+/**
+ * Every session shares one save (your games and bests) in $.store, so it is
+ * the source of truth: each change reads it fresh, applies just that change
+ * and writes it back, then mirrors it into this session's $.state for
+ * drawing. A long-lived session therefore never writes a stale copy over a
+ * game you played in another one. Changes made here queue up one at a time.
+ */
+let queue: Promise<unknown> = Promise.resolve()
+const mutate = ($: EngineInterface, f: (s: Save, now: number) => Save): Promise<Save> => {
+  const run = queue.then(async () => {
+    const now = await $.clock.now()
+    const stored = await readStore($)
+    const base = stored === undefined ? await getSave($) : M.loadSave(stored)
+    const next = f(base, now)
+    if (next !== base) await $.store.set(STORE_KEY, next)
+    await $.state.set(saveRef, next)
+    return next
+  })
+  queue = run.catch(() => undefined)
+  return run
 }
+
+/** Picks up what other sessions saved (a game played there, their stats). */
+const refresh = ($: EngineInterface) => mutate($, s => s)
 
 const isPaneOpen = async ($: EngineInterface) => (await $.ui.panes()).some(p => p.id === PANE)
 
@@ -54,33 +81,36 @@ const scheduleOffer = async ($: EngineInterface) => {
 /** One input from a key, a tap or a button. Ignored unless Claude is working. */
 const send = async ($: EngineInterface, input: Input) => {
   const live = await getLive($)
-  const save = await getSave($)
-  const next = M.act(save, input, live, await $.clock.now(), PUZZLES)
-  if (next === save) return
-  await setSave($, () => next, true)
-  if (!live.playedThisTurn) await setLive($, l => ({ ...l, playedThisTurn: true }))
+  let changed = false
+  let finished = 0
+  await mutate($, (s, now) => {
+    const next = M.act(s, input, live, now, PUZZLES)
+    changed = next !== s
+    finished = M.boardsFinished(s, next)
+    return next
+  })
+  if (finished > 0) await setSession($, t => ({ ...t, boardsCleared: t.boardsCleared + finished }))
+  if (changed && !live.playedThisTurn) await setLive($, l => ({ ...l, playedThisTurn: true }))
 }
 
 const attention = async ($: EngineInterface) => {
-  const now = await $.clock.now()
   await setLive($, M.needsAttention)
-  await setSave($, s => M.pauseAll(s, now), true)
+  await mutate($, M.pauseAll)
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'games', description: 'Open the While-You-Wait arcade (playable while Claude works)' })
     // A hot reload fires this again mid-session: keep what $.state already holds.
-    if ((await $.state.get(saveRef)).version === 0) {
-      const now = await $.clock.now()
-      await $.state.set(saveRef, M.loadSave(await $.store.get(STORE_KEY), now))
-    }
+    if ((await $.state.get(saveRef)).version === 0) await $.state.set(saveRef, M.loadSave(await readStore($)))
+    if ((await $.state.get(sessionRef)).version === 0) await $.state.set(sessionRef, M.freshSession())
     if ((await $.state.get(liveRef)).version === 0) await $.state.set(liveRef, M.freshLive())
     else await scheduleOffer($)
     return next(e)
   })
 
   on('command.run', { command: 'games' }, async $ => {
+    await refresh($)
     await $.ui.open({ id: PANE, title: TITLE })
     const live = await getLive($)
     return {
@@ -94,6 +124,7 @@ export const register: Register = on => {
   on('turn.start', async ($, e, next) => {
     const now = await $.clock.now()
     await setLive($, l => M.turnStarted(l, e.turnId, now))
+    await refresh($)
     $.ui.status(undefined)
     await scheduleOffer($)
     return next(e)
@@ -102,21 +133,18 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e) // a subagent's turn, not yours
     const now = await $.clock.now()
-    const live = await getLive($)
-    const save = await getSave($)
-    const done = M.turnCompleted(live, save, now, e.reason === 'answer')
+    const done = M.turnCompleted(await getLive($), await getSession($), now, e.reason === 'answer')
+    await $.state.set(sessionRef, done.session)
     await $.state.set(liveRef, done.live)
-    await $.state.set(saveRef, done.save)
-    await $.store.set(STORE_KEY, done.save)
+    await mutate($, M.pauseAll) // freeze any running game clock, saved exactly as it is
     $.ui.status(undefined)
     return next(e)
   })
 
   // Observers, not guards: if one fails, whatever it watched goes on untouched.
   on('tool.call', async ($, e, next) => {
-    const now = await $.clock.now()
     const path = (e as { file_path?: unknown; notebook_path?: unknown }).file_path ?? (e as { notebook_path?: unknown }).notebook_path
-    await setSave($, s => M.toolCalled(s, String(e.tool), typeof path === 'string' ? path : undefined, now))
+    await setSession($, t => M.toolCalled(t, String(e.tool), typeof path === 'string' ? path : undefined))
     if (String(e.tool) === 'AskUserQuestion') await attention($)
     const ran = await next(e)
     // Any permission prompt or question for this call has been answered by now.
@@ -164,10 +192,11 @@ export const register: Register = on => {
     const els = $.ui.resolve(e)
     const live = await getLive($)
     const save = await getSave($)
+    const session = await getSession($)
     const lcd: Lcd = (await $.state.get(lcdRef)).value ?? { hasFailed: false }
     return drawPane(
       { Box: els.Box, Text: els.Text, Button: els.Button, ...('Client' in els ? { Client: els.Client } : {}), ...('Svg' in els ? { Svg: els.Svg } : {}) },
-      { live, save, now: await $.clock.now(), puzzles: PUZZLES, useClient: e.surface === 'desktop' && !lcd.hasFailed },
+      { live, save, session, now: await $.clock.now(), puzzles: PUZZLES, useClient: e.surface === 'desktop' && !lcd.hasFailed },
       {
         send: input => void send($, input),
         jumpBack: () => void $.ui.close({ id: PANE }),

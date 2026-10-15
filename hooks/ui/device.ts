@@ -7,7 +7,7 @@
 import * as Mines from '../games/minesweeper'
 import { entryAt, layout } from '../games/crossword'
 import type { PuzzleData } from '../games/puzzles'
-import type { Live, Save } from '../model'
+import type { Live, Save, SessionStats } from '../model'
 import { GAMES, MENU, fmtClock, fmtDuration } from '../model'
 import { GB } from './palette'
 import { CONTROLS, DEVICE_H, DEVICE_W, LCD } from './hit'
@@ -23,7 +23,7 @@ const INK = '#2c3178' // the navy of the printed labels
 const MAROON = '#9a2257'
 const RUBBER = '#2a2b33'
 
-export type DeviceView = { save: Save; live: Live; now: number; puzzles: readonly PuzzleData[] }
+export type DeviceView = { save: Save; live: Live; session: SessionStats; now: number; puzzles: readonly PuzzleData[] }
 
 const rect = (x: number, y: number, w: number, h: number, fill: string, extra = '') =>
   `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"${extra}/>`
@@ -41,7 +41,7 @@ const statRow = (t: Typesetter, label: string, value: string, y: number, color: 
   t.text(label, 6, y, color) + t.text(value, 154 - textWidth(value), y, GB.darkest)
 
 const resting = (t: Typesetter, v: DeviceView): Lcd => {
-  const today = v.save.stats.today
+  const today = v.session
   let s = ''
   if (v.live.banner === 'done') {
     s += rect(0, 0, LCD.w, 13, GB.darkest) + t.text("✓ CLAUDE'S DONE!", centerX("✓ CLAUDE'S DONE!"), 3, GB.lightest)
@@ -52,7 +52,7 @@ const resting = (t: Typesetter, v: DeviceView): Lcd => {
   s += t.text('✦', 128, 42, GB.dark, 2) + t.text('Z', 141, 34, GB.dark) + t.text('Z', 147, 27, GB.light)
   s += t.text('GO SHIP SOMETHING ✦', centerX('GO SHIP SOMETHING ✦'), 60, GB.dark)
   s += rect(4, 74, 152, 66, GB.light)
-  s += t.text('TODAY', 6, 77, GB.darkest)
+  s += t.text('THIS SESSION', 6, 77, GB.darkest)
   s += rect(6, 86, 148, 1, GB.dark)
   s += statRow(t, 'TASKS SHIPPED', String(today.turns), 90)
   s += statRow(t, 'CLAUDE WORKED', fmtDuration(today.workMs).toUpperCase(), 100)
@@ -202,9 +202,9 @@ const crossword = (t: Typesetter, v: DeviceView): Lcd => {
 
 const scores = (t: Typesetter, v: DeviceView): Lcd => {
   const sc = v.save.scores
-  const all = v.save.stats.allTime
+  const all = v.session
   let s = header(t, 'SCORES', 'B = BACK')
-  s += t.text('CLAUDE, ALL-TIME', 6, 16, GB.darkest)
+  s += t.text('CLAUDE, THIS SESSION', 6, 16, GB.darkest)
   s += statRow(t, 'TASKS SHIPPED', String(all.turns), 27)
   s += statRow(t, 'TIME WORKED', fmtDuration(all.workMs).toUpperCase(), 36)
   s += statRow(t, 'TOOL CALLS', String(all.toolCalls), 45)
@@ -299,7 +299,7 @@ export const drawDevice = (v: DeviceView): { svg: string; hit: HitMap } => {
 /** What the screen shows, in words: the Svg's alt text (and what tests read). */
 export const svgAlt = (v: DeviceView): string => {
   const { save, live } = v
-  if (live.phase === 'idle') return `While-you-wait. Claude's resting: go ship something.${live.banner === 'done' ? " Claude's done." : ''} Today: ${save.stats.today.turns} tasks shipped.`
+  if (live.phase === 'idle') return `While-you-wait. Claude's resting: go ship something.${live.banner === 'done' ? " Claude's done." : ''} This session: ${v.session.turns} tasks shipped.`
   if (live.phase === 'attention') return 'While-you-wait. Paused: Claude needs you.'
   switch (save.screen) {
     case 'menu': return `While-you-wait. Select game: ${normalize(MENU[save.menuCursor] ?? '')}.`

@@ -25,7 +25,7 @@ real 160×144 LCD in the four DMG greens, with a hand-made 5×7 pixel font.
   the game pauses and saves its exact state. A banner in the pane says
   *Claude's done* or *Claude needs you*, with a **↩ Back to Claude** button.
   v1 has no toasts, sounds or OS notifications.
-- Your game resumes exactly where you left it, including in later sessions.
+- Your game resumes exactly where you left it, in this session or any other.
 
 ### Games
 
@@ -43,11 +43,16 @@ keyboard; Esc returns you to the prompt.
 
 Your work stats come first and are the biggest thing on the stats screen:
 tasks Claude completed, how long Claude worked, tool calls, files edited, and
-how many of those tasks finished while you waited, shown for today and all
-time. For example: *"Claude shipped 14 tasks while you cleared 6 boards."*
-Game bests (2048 tile and score, fastest Minesweeper clears, crosswords solved)
-come after, in a quieter style. There are no streaks, no "one more game"
-nudges, and nothing to play while Claude is idle.
+how many of those tasks finished while you waited. For example: *"Claude
+shipped 14 tasks while you cleared 6 boards."*
+
+**Stats count the current session only.** They start at zero in every new
+session and are never written to disk. Your games in progress and your bests
+(2048 tile and score, fastest Minesweeper clears, crosswords solved) do carry
+over, so you can pick up a game in any session. If several sessions are open,
+they share those games safely, and one session can't overwrite progress you
+made in another. There are no streaks, no "one more game" nudges, and nothing
+to play while Claude is idle.
 
 ## Install
 

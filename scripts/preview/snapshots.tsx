@@ -21,10 +21,9 @@ const inline = async (ui: { drawn: (s?: { in: string }) => Promise<unknown> }, n
 test('snapshots', { timeoutMs: 20_000 }, async ($: Engine, on) => {
   const clock = mock.clock(on, { now: T0 })
   harness(on, {
-    'save-v1': {
-      v: 1, screen: 'menu', menuCursor: 0, flagMode: false, g2048: null, mines: null, crossword: null,
+    'save-v2': {
+      v: 2, screen: 'menu', menuCursor: 0, flagMode: false, g2048: null, mines: null, crossword: null,
       scores: { best2048Tile: 512, best2048Score: 6140, minesFastestMs: [72_000, 95_000], crosswordsSolved: ['cw-001', 'cw-002', 'cw-003'] },
-      stats: { day: '2026-10-15', today: { turns: 13, turnsWhileWaited: 5, workMs: 4_380_000, toolCalls: 342, filesEdited: 27, boardsCleared: 6 }, allTime: { turns: 211, turnsWhileWaited: 88, workMs: 61_000_000, toolCalls: 6120, filesEdited: 402, boardsCleared: 97 }, todayFiles: [] },
     },
   })
   await $.session.start({ cwd: '/tmp', surface: 'desktop', isInteractive: true, startedAt: T0 } as never)

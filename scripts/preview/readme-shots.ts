@@ -9,8 +9,8 @@ import * as M from '../../hooks/model'
 import { drawDevice } from '../../hooks/ui/device'
 
 const T0 = new Date(2026, 9, 15, 15, 30).getTime()
-const base = M.freshSave(T0)
-const save: M.Save = { ...base, stats: { ...base.stats, today: { turns: 14, turnsWhileWaited: 6, workMs: 4_380_000, toolCalls: 342, filesEdited: 27, boardsCleared: 6 } } }
+const save: M.Save = M.freshSave()
+const session: M.SessionStats = { ...M.freshSession(), turns: 14, turnsWhileWaited: 6, workMs: 4_380_000, toolCalls: 342, filesEdited: 27, boardsCleared: 6 }
 const working = M.turnStarted(M.freshLive(), 't', T0)
 const g = { ...G2048.newGame(7), board: [2, 4, 8, 16, 0, 64, 128, 4, 0, 2, 256, 32, 0, 0, 2, 512], score: 6140 }
 let m = Mines.reveal(Mines.newGame(11), 40, T0)
@@ -25,7 +25,7 @@ const shots: [string, M.Save, M.Live][] = [
   ['crossword', { ...save, screen: 'crossword', crossword: c }, working],
 ]
 for (const [name, s, live] of shots) {
-  const { svg } = drawDevice({ save: s, live, now: T0 + 42_000, puzzles: PUZZLES })
+  const { svg } = drawDevice({ save: s, live, session, now: T0 + 42_000, puzzles: PUZZLES })
   writeFileSync(`docs/${name}.svg`, svg.replace(/width="\d+" height="\d+"/, 'width="300" height="432"'))
 }
 console.log(`${shots.length} images -> docs/`)
