@@ -22,8 +22,10 @@ const BEZEL = '#56586b'
 const INK = '#2c3178' // the navy of the printed labels
 const MAROON = '#9a2257'
 const RUBBER = '#2a2b33'
+const PRESSED_RUBBER = '#0d0d12'
+const MAROON_DOWN = '#6e1840'
 
-export type DeviceView = { save: Save; live: Live; session: SessionStats; now: number; puzzles: readonly PuzzleData[] }
+export type DeviceView = { save: Save; live: Live; session: SessionStats; pressed?: string | null; now: number; puzzles: readonly PuzzleData[] }
 
 const rect = (x: number, y: number, w: number, h: number, fill: string, extra = '') =>
   `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"${extra}/>`
@@ -33,6 +35,9 @@ const centerX = (s: string, scale = 1, width = LCD.w) => Math.round((width - tex
 type Lcd = { body: string; grid: HitMap['grid']; menu: HitMap['menu']; hasHeader?: boolean }
 
 // ── LCD screens (160x144, LCD units) ────────────────────────────────────
+
+/** `✦2` when agents are working: the count rides along in every screen's header. */
+const agentsTag = (v: DeviceView) => (v.live.agents > 0 ? ` ✦${v.live.agents}` : '')
 
 const header = (t: Typesetter, left: string, right: string) =>
   rect(0, 0, LCD.w, 11, GB.darkest) + t.text(left, 3, 2, GB.lightest) + t.text(right, LCD.w - 2 - textWidth(right), 2, GB.light)
@@ -77,7 +82,7 @@ const ICONS: Record<string, (x: number, y: number) => string> = {
 const menu = (t: Typesetter, v: DeviceView): Lcd => {
   const y0 = 16
   const pitch = 28
-  let s = header(t, 'SELECT GAME', '')
+  let s = header(t, 'SELECT GAME', v.live.agents > 0 ? `✦${v.live.agents} AGENT${v.live.agents === 1 ? '' : 'S'}` : '')
   MENU.forEach((screen, i) => {
     const y = y0 + i * pitch
     const game = GAMES.find(g => g.id === screen)
@@ -110,7 +115,7 @@ const g2048 = (t: Typesetter, v: DeviceView): Lcd => {
   const x0 = 17
   const y0 = 15
   const tile = 30
-  let s = header(t, '2048', `SCORE ${g.score}`) + rect(x0 - 2, y0 - 2, 4 * tile + 3 * 2 + 4, 4 * tile + 3 * 2 + 4, GB.darkest)
+  let s = header(t, `2048${agentsTag(v)}`, `SCORE ${g.score}`) + rect(x0 - 2, y0 - 2, 4 * tile + 3 * 2 + 4, 4 * tile + 3 * 2 + 4, GB.darkest)
   g.board.forEach((val, i) => {
     const x = x0 + (i % 4) * (tile + 2)
     const y = y0 + Math.floor(i / 4) * (tile + 2)
@@ -136,9 +141,11 @@ const mines = (t: Typesetter, v: DeviceView): Lcd => {
   const x0 = 17
   const y0 = 14
   const right = `⚑${Mines.flagsLeft(m)} ${fmtClock(Mines.elapsed(m, v.now))}`
-  let s = header(t, 'MINES', right)
+  const left = `MINES${agentsTag(v)}`
+  let s = header(t, left, right)
   // The FLAG chip: lit while clicks plant flags. Clicking the header toggles it.
-  s += v.save.flagMode ? rect(40, 1, 29, 9, GB.lightest) + t.text('FLAG', 42, 2, GB.darkest) : t.text('FLAG', 42, 2, GB.dark)
+  const fx = 3 + textWidth(left) + 7
+  s += v.save.flagMode ? rect(fx - 2, 1, 29, 9, GB.lightest) + t.text('FLAG', fx, 2, GB.darkest) : t.text('FLAG', fx, 2, GB.dark)
   m.revealed.forEach((open, i) => {
     const x = x0 + (i % m.w) * pitch
     const y = y0 + Math.floor(i / m.w) * pitch
@@ -186,6 +193,7 @@ const crossword = (t: Typesetter, v: DeviceView): Lcd => {
     if (num !== null && num !== undefined) s += t.digits(String(num), x + 1, y + 1, fg)
     if (l) s += t.text(l, x + 6, y + 6, fg, 2)
   })
+  if (v.live.agents > 0) s += rect(137, 2, 21, 11, GB.darkest) + t.text(`✦${v.live.agents}`, 140, 4, GB.lightest)
   s += rect(0, 112, LCD.w, 32, GB.darkest)
   if (c.isSolved) {
     s += t.text('SOLVED! ✦', centerX('SOLVED! ✦'), 117, GB.lightest) + t.text('START = NEXT PUZZLE', centerX('START = NEXT PUZZLE'), 129, GB.light)
@@ -203,7 +211,7 @@ const crossword = (t: Typesetter, v: DeviceView): Lcd => {
 const scores = (t: Typesetter, v: DeviceView): Lcd => {
   const sc = v.save.scores
   const all = v.session
-  let s = header(t, 'SCORES', 'B = BACK')
+  let s = header(t, `SCORES${agentsTag(v)}`, 'B = BACK')
   s += t.text('CLAUDE, THIS SESSION', 6, 16, GB.darkest)
   s += statRow(t, 'TASKS SHIPPED', String(all.turns), 27)
   s += statRow(t, 'TIME WORKED', fmtDuration(all.workMs).toUpperCase(), 36)
@@ -268,21 +276,36 @@ export const drawDevice = (v: DeviceView): { svg: string; hit: HitMap } => {
     rect(0, 0, LCD.w, LCD.h, GB.lightest) + lcdBody + '</g>' +
     rect(LCD.x, LCD.y, LCD.w, 1, '#000', ' opacity=".18"') // the glass shadow
 
+  const pressed = v.pressed ?? null
+  const dpadArm: Record<string, string> = {
+    up: rect(dpad.cx - 6, dpad.cy - 19, 12, 13, PRESSED_RUBBER, ' rx="2"'),
+    down: rect(dpad.cx - 6, dpad.cy + 6, 12, 13, PRESSED_RUBBER, ' rx="2"'),
+    left: rect(dpad.cx - 19, dpad.cy - 6, 13, 12, PRESSED_RUBBER, ' rx="2"'),
+    right: rect(dpad.cx + 6, dpad.cy - 6, 13, 12, PRESSED_RUBBER, ' rx="2"'),
+  }
+  const button = (c: { cx: number; cy: number }, isDown: boolean) =>
+    isDown
+      ? `<circle cx="${c.cx}" cy="${c.cy + 1}" r="10" fill="${MAROON_DOWN}"/>`
+      : `<circle cx="${c.cx}" cy="${c.cy}" r="11" fill="${MAROON}"/><circle cx="${c.cx - 3}" cy="${c.cy - 3}" r="4" fill="#b8457a" opacity=".6"/>`
+  const pill = (x: number, cx: number, isDown: boolean) =>
+    `<rect x="${x}" y="${isDown ? 257 : 256}" width="22" height="7" rx="3.5" fill="${isDown ? '#5d5b66' : '#8b8996'}" transform="rotate(-25 ${cx} 259)"/>`
+
   const controls =
-    // D-pad: a dark cross with a dimple.
+    // D-pad: a dark cross with a dimple; the pressed arm darkens.
     rect(dpad.cx - 6, dpad.cy - 19, 12, 38, RUBBER, ' rx="2"') +
     rect(dpad.cx - 19, dpad.cy - 6, 38, 12, RUBBER, ' rx="2"') +
+    (pressed && dpadArm[pressed] ? dpadArm[pressed] : '') +
     `<circle cx="${dpad.cx}" cy="${dpad.cy}" r="3" fill="#3b3c46"/>` +
     t.text('▲', dpad.cx - 2, dpad.cy - 16, '#555764') + t.text('▼', dpad.cx - 2, dpad.cy + 10, '#555764') +
     t.text('◀', dpad.cx - 17, dpad.cy - 3, '#555764') + t.text('▶', dpad.cx + 13, dpad.cy - 3, '#555764') +
     // A and B: maroon buttons on a tilted pill.
     `<rect x="${b.cx - 16}" y="${a.cy - 14}" width="64" height="30" rx="15" fill="#c9c4b9" transform="rotate(-25 ${(a.cx + b.cx) / 2} ${(a.cy + b.cy) / 2})"/>` +
-    `<circle cx="${b.cx}" cy="${b.cy}" r="11" fill="${MAROON}"/><circle cx="${b.cx - 3}" cy="${b.cy - 3}" r="4" fill="#b8457a" opacity=".6"/>` +
-    `<circle cx="${a.cx}" cy="${a.cy}" r="11" fill="${MAROON}"/><circle cx="${a.cx - 3}" cy="${a.cy - 3}" r="4" fill="#b8457a" opacity=".6"/>` +
+    button(b, pressed === 'b') +
+    button(a, pressed === 'a') +
     t.text('B', b.cx - 2, b.cy + 15, INK) + t.text('A', a.cx - 2, a.cy + 15, INK) +
     // SELECT / START.
-    `<rect x="70" y="256" width="22" height="7" rx="3.5" fill="#8b8996" transform="rotate(-25 81 259)"/>` +
-    `<rect x="108" y="256" width="22" height="7" rx="3.5" fill="#8b8996" transform="rotate(-25 119 259)"/>` +
+    pill(70, 81, pressed === 'select') +
+    pill(108, 119, pressed === 'start') +
     t.text('SELECT', 63, 270, INK) + t.text('START', 105, 270, INK) +
     // Speaker grille.
     [0, 1, 2, 3, 4, 5].map(i => `<rect x="${150 + i * 7}" y="248" width="3" height="26" rx="1.5" fill="#bdb8ad" transform="rotate(-30 ${151 + i * 7} 261)"/>`).join('')
@@ -301,6 +324,7 @@ export const svgAlt = (v: DeviceView): string => {
   const { save, live } = v
   if (live.phase === 'idle') return `While-you-wait. Claude's resting: go ship something.${live.banner === 'done' ? " Claude's done." : ''} This session: ${v.session.turns} tasks shipped.`
   if (live.phase === 'attention') return 'While-you-wait. Paused: Claude needs you.'
+  if (live.agents > 0 && !live.isTurnRunning) return `While-you-wait. ${live.agents} background agent${live.agents === 1 ? '' : 's'} working: ${normalize(save.screen)} screen.`
   switch (save.screen) {
     case 'menu': return `While-you-wait. Select game: ${normalize(MENU[save.menuCursor] ?? '')}.`
     case '2048': return save.g2048 ? `While-you-wait. 2048, score ${save.g2048.score}${save.g2048.isOver ? ', no moves left' : ''}.` : 'While-you-wait. 2048.'

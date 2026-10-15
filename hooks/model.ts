@@ -39,7 +39,7 @@ export const freshSession = (): SessionStats => ({
 })
 
 export const freshLive = (): Live => ({
-  phase: 'idle', turnId: null, turnStartedAt: null, offeredTurnId: null, banner: null, playedThisTurn: false,
+  phase: 'idle', turnId: null, isTurnRunning: false, agents: 0, busySince: null, offeredFor: null, banner: null, playedThisTurn: false,
 })
 
 export const freshSave = (): Save => ({
@@ -76,9 +76,31 @@ export const loadSave = (raw: unknown): Save => {
 
 // ── Claude's side: turns, tools, attention ──────────────────────────────
 
-export const turnStarted = (live: Live, turnId: string, now: number): Live => ({
-  ...live, phase: 'working', turnId, turnStartedAt: now, banner: null, playedThisTurn: false,
-})
+/** Claude is busy while your turn runs or any of its agents is still running. */
+export const isBusy = (live: Live): boolean => live.isTurnRunning || live.agents > 0
+
+type Settled = { live: Live; session: SessionStats; becameIdle: boolean }
+
+/** Moves the phase to match what is running: idle -> working, or -> idle with "Claude's done". */
+const settle = (live: Live, session: SessionStats, now: number): Settled => {
+  if (isBusy(live)) {
+    return {
+      live: live.phase === 'idle' ? { ...live, phase: 'working', busySince: now, banner: null } : live,
+      session,
+      becameIdle: false,
+    }
+  }
+  if (live.phase === 'idle') return { live, session, becameIdle: false }
+  const ran = live.busySince === null ? 0 : Math.max(0, now - live.busySince)
+  return {
+    live: { ...live, phase: 'idle', busySince: null, banner: 'done' },
+    session: { ...session, workMs: session.workMs + ran },
+    becameIdle: true,
+  }
+}
+
+export const turnStarted = (live: Live, turnId: string, now: number): Live =>
+  settle({ ...live, isTurnRunning: true, turnId, banner: null, playedThisTurn: false }, freshSession(), now).live
 
 export const needsAttention = (live: Live): Live =>
   live.phase === 'working' ? { ...live, phase: 'attention', banner: 'needs-you' } : live
@@ -86,19 +108,22 @@ export const needsAttention = (live: Live): Live =>
 export const attentionCleared = (live: Live): Live =>
   live.phase === 'attention' ? { ...live, phase: 'working', banner: null } : live
 
-/** Counts the turn into this session's stats. `didAnswer`: it ended with an answer, not an interrupt or error. */
-export const turnCompleted = (live: Live, session: SessionStats, now: number, didAnswer = true): { live: Live; session: SessionStats } => {
-  const ran = live.turnStartedAt === null ? 0 : Math.max(0, now - live.turnStartedAt)
-  return {
-    live: { ...live, phase: 'idle', turnStartedAt: null, banner: 'done' },
-    session: {
-      ...session,
-      turns: session.turns + (didAnswer ? 1 : 0),
-      turnsWhileWaited: session.turnsWhileWaited + (live.playedThisTurn ? 1 : 0),
-      workMs: session.workMs + ran,
-    },
+/**
+ * Your turn ended: count it, then go idle unless agents are still running.
+ * `didAnswer`: it ended with an answer, not an interrupt or error.
+ */
+export const turnCompleted = (live: Live, session: SessionStats, now: number, didAnswer = true): Settled => {
+  const counted: SessionStats = {
+    ...session,
+    turns: session.turns + (didAnswer ? 1 : 0),
+    turnsWhileWaited: session.turnsWhileWaited + (live.playedThisTurn ? 1 : 0),
   }
+  return settle({ ...attentionCleared(live), isTurnRunning: false }, counted, now)
 }
+
+/** This session's running-agent count changed. */
+export const agentsChanged = (live: Live, session: SessionStats, agents: number, now: number): Settled =>
+  settle({ ...live, agents: Math.max(0, agents) }, session, now)
 
 const EDITING = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
@@ -111,11 +136,12 @@ export const toolCalled = (session: SessionStats, tool: string, filePath: string
   }
 }
 
+/** Offer the pane once per busy stretch, after a minute of Claude working. */
 export const shouldOffer = (live: Live, now: number): boolean =>
   live.phase === 'working' &&
-  live.turnStartedAt !== null &&
-  now - live.turnStartedAt >= OFFER_AFTER_MS &&
-  live.offeredTurnId !== live.turnId
+  live.busySince !== null &&
+  now - live.busySince >= OFFER_AFTER_MS &&
+  live.offeredFor !== live.busySince
 
 /** Freezes every clock so a paused game resumes exactly where it stopped. */
 export const pauseAll = (s: Save, now: number): Save => ({ ...s, mines: s.mines && Mines.pause(s.mines, now) })

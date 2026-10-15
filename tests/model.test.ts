@@ -48,7 +48,27 @@ describe('model', () => {
     const live = M.turnStarted(M.freshLive(), 't1', T0)
     expect(M.shouldOffer(live, T0 + 59_000)).toBe(false)
     expect(M.shouldOffer(live, T0 + 60_000)).toBe(true)
-    expect(M.shouldOffer({ ...live, offeredTurnId: 't1' }, T0 + 99_000)).toBe(false)
+    expect(M.shouldOffer({ ...live, offeredFor: live.busySince }, T0 + 99_000)).toBe(false)
+  })
+
+  test('background agents keep Claude busy; done only when the last one finishes', () => {
+    let live = M.turnStarted(M.freshLive(), 't1', T0)
+    let session = M.freshSession()
+    let r = M.agentsChanged(live, session, 2, T0 + 5_000)
+    expect(r.live.phase).toBe('working')
+    // Your turn ends while 2 agents run: counted, but not done.
+    r = M.turnCompleted(r.live, r.session, T0 + 20_000)
+    expect(r).toMatchObject({ becameIdle: false, live: { phase: 'working', banner: null, agents: 2 } })
+    expect(r.session.turns).toBe(1)
+    r = M.agentsChanged(r.live, r.session, 1, T0 + 50_000)
+    expect(r.becameIdle).toBe(false)
+    r = M.agentsChanged(r.live, r.session, 0, T0 + 80_000)
+    expect(r).toMatchObject({ becameIdle: true, live: { phase: 'idle', banner: 'done' } })
+    expect(r.session.workMs).toBe(80_000) // the whole busy stretch, agents included
+    // A busy stretch started by agents alone also unlocks the arcade.
+    live = r.live
+    session = r.session
+    expect(M.agentsChanged(live, session, 1, T0 + 99_000).live.phase).toBe('working')
   })
 
   test('the headline leads with Claude\'s work', () => {

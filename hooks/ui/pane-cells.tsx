@@ -26,6 +26,8 @@ export type PaneView = {
   live: Live
   /** This session's work stats (never stored). */
   session: SessionStats
+  /** The drawn control just pressed (`a`, `up`, ...), shown pushed-in; null otherwise. */
+  pressed: string | null
   now: number
   puzzles: readonly PuzzleData[]
   /** Draw the handheld (Svg + input pad) rather than plain Boxes; the LCD Client too. */

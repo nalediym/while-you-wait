@@ -73,9 +73,18 @@ export const drawPane = (els: PaneElements, view: PaneView, act: PaneActions): R
             Your game is saved exactly where you left it.
           </Text>
         ) : (
-          <Text dimColor wrap="wrap">
-            {HINTS[save.screen] ?? ''}
-          </Text>
+          <Box flexDirection="column">
+            {live.agents > 0 ? (
+              <Text bold wrap="wrap">
+                {live.isTurnRunning
+                  ? `Claude and ${plural(live.agents, 'agent')} working.`
+                  : `Claude handed off to ${plural(live.agents, 'background agent')}. Keep playing: you'll see "Claude's done" when the last one finishes.`}
+              </Text>
+            ) : null}
+            <Text dimColor wrap="wrap">
+              {HINTS[save.screen] ?? ''}
+            </Text>
+          </Box>
         )}
         {crossword ? (
           <Box flexDirection="column" marginTop={1}>

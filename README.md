@@ -17,8 +17,12 @@ real 160×144 LCD in the four DMG greens, with a hand-made 5×7 pixel font.
 ## How it works
 
 - **`/games`** opens the pane at any time.
-- When a turn has been running for **60 seconds**, the pane opens beside the
+- When Claude has been busy for **60 seconds**, the pane opens beside the
   transcript once. It never takes keyboard focus, so it can't interrupt your typing.
+- **Background agents count as Claude working.** If your turn ends while
+  background agents in the session are still running, the arcade stays
+  unlocked and the screen shows how many are working (✦2). *Claude's done*
+  appears only when the last one finishes.
 - **You can only play while Claude is working.** When Claude is idle, the pane
   locks and shows *"Claude's resting — go ship something"* along with your stats.
 - When Claude **finishes**, or **needs you** (a permission prompt or a question),

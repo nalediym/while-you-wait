@@ -8,9 +8,12 @@ import { DEVICE_H, DEVICE_W, pressAt } from './hit'
 import type { HitMap, Press } from './hit'
 
 export type PadProps = { hit: HitMap }
+/** Where a click landed, raw: what the click log keeps to diagnose a tap that lands wrong. */
+export type PadRaw = { x: number; y: number; fx: number | null; fy: number | null; columns: number; rows: number }
+
 export type PadPost =
   | { type: 'key'; key: string; ctrl?: true; meta?: true }
-  | { type: 'press'; press: Press; button: 'left' | 'right' }
+  | { type: 'press'; press: Press | null; button: 'left' | 'right'; raw: PadRaw }
 
 // Listeners are set once, on the first call; each call refreshes what they
 // read here, so a new screen's hit map is used at once (no remount, so the
@@ -32,9 +35,12 @@ const Pad: ClientModule<PadProps, { isListening: true }> = (props, surface) => {
     })
     surface.onPointer(p => {
       if (p.type !== 'down' || !latest) return
-      const { x, y } = toDevice(p, surface.columns || latest.columns, surface.rows || latest.rows)
-      const press = pressAt(latest.hit, x, y)
-      if (press) surface.post({ type: 'press', press, button: p.button === 'right' ? 'right' : 'left' } satisfies PadPost)
+      const columns = surface.columns || latest.columns
+      const rows = surface.rows || latest.rows
+      const { x, y } = toDevice(p, columns, rows)
+      const raw: PadRaw = { x: p.x, y: p.y, fx: p.fine?.x ?? null, fy: p.fine?.y ?? null, columns, rows }
+      // Every click is posted, even one that lands on nothing, so the log shows it.
+      surface.post({ type: 'press', press: pressAt(latest.hit, x, y), button: p.button === 'right' ? 'right' : 'left', raw } satisfies PadPost)
     })
     surface.setState({ isListening: true })
   }

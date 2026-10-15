@@ -49,13 +49,21 @@ export type Phase = 'idle' | 'working' | 'attention'
 export type Banner = 'done' | 'needs-you' | null
 
 export type Live = {
-  phase: Phase
+  phase: Phase // working while your turn runs OR any of this session's agents still does
   turnId: string | null
-  turnStartedAt: number | null
-  offeredTurnId: string | null // the turn the pane already offered itself in
+  isTurnRunning: boolean // your main conversation's turn
+  agents: number // this session's agents still running (background ones, once your turn ends)
+  busySince: number | null // when Claude last got busy (turn or agents); null while idle
+  offeredFor: number | null // the busySince the pane already offered itself for
   banner: Banner
   playedThisTurn: boolean
 }
+
+/** A drawn control that was just pressed: drawn pushed-in for a moment. */
+export type Pressed = { id: string; at: number } | null
+
+/** One raw click on the handheld, kept so a click that lands wrong can be diagnosed. */
+export type ClickLog = { at: number; press: string; x: number; y: number; fx: number | null; fy: number | null; columns: number; rows: number }
 
 /** This session's work, counted from zero when the session starts. */
 export type SessionStats = {
@@ -91,6 +99,6 @@ export type Lcd = { hasFailed: boolean }
 
 declare module 'claude-code' {
   interface PluginState {
-    'while-you-wait': { live: Live; session: SessionStats; save: Save; lcd: Lcd }
+    'while-you-wait': { live: Live; session: SessionStats; save: Save; lcd: Lcd; pressed: Pressed }
   }
 }

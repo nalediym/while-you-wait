@@ -156,6 +156,51 @@ describe('the handheld on desktop', () => {
     expect(await alt(ui)).toMatch(/This session: 1 tasks shipped/)
   })
 
+  test('background agents keep the arcade unlocked and show on the screen', async ($, on) => {
+    const clock = mock.clock(on, { now: T0 })
+    const h = harness(on)
+    await startSession($)
+    const ui = await mountPane($)
+    await startTurn($, 't1')
+    h.agents = [
+      { id: 'a1', description: 'refactor', type: 'general-purpose', status: 'running' },
+      { id: 'a2', description: 'tests', type: 'general-purpose', status: 'running' },
+    ] as never
+    const callTool = $.tool.call as unknown as (e: object) => Promise<unknown>
+    await callTool({ tool: 'Agent', tool_use_id: 'u1', prompt: 'go', description: 'go' }).catch(() => undefined)
+    await completeTurn($, 't1')
+    // Your turn is over but 2 agents run: still playable, no "done" yet.
+    expect(await alt(ui)).toMatch(/2 background agents working/)
+    expect(await ui.find({ type: 'Text', text: /handed off to 2 background agents/ })).toBeDefined()
+    expect(await ui.find({ key: 'jump-back' })).toBe(undefined)
+    await clickAt(ui, LCD.x + 80, LCD.y + 16 + 10)
+    expect(await alt(ui)).toMatch(/2048/)
+
+    // One finishes, then the last: only then is Claude done.
+    h.agents = [{ ...h.agents[0]!, status: 'completed' }, h.agents[1]!] as never
+    await clock.advance(3_100)
+    expect(await alt(ui)).toMatch(/1 background agent working/)
+    h.agents = h.agents.map(a => ({ ...a, status: 'completed' })) as never
+    await clock.advance(3_100)
+    expect(await alt(ui)).toMatch(/Claude's resting.*Claude's done/)
+    expect(await ui.find({ key: 'jump-back' })).toBeDefined()
+  })
+
+  test('a click on a drawn button shows it pressed, and is logged raw', async ($, on) => {
+    const clock = mock.clock(on, { now: T0 })
+    const h = harness(on)
+    await startSession($)
+    const ui = await mountPane($)
+    await startTurn($, 't1')
+    await clickControl(ui, CONTROLS.a)
+    const svg = String((await ui.find({ type: 'Svg' }))?.props.source ?? '')
+    expect(svg).toContain('#6e1840') // A drawn pushed-in
+    await clock.advance(200)
+    expect(String((await ui.find({ type: 'Svg' }))?.props.source ?? '')).not.toContain('#6e1840')
+    const log = h.store.get('click-log') as { press: string; columns: number; rows: number }[]
+    expect(log.at(-1)).toMatchObject({ press: 'a', columns: COLS, rows: ROWS })
+  })
+
   test('/games opens the pane', async ($, on) => {
     mock.clock(on, { now: T0 })
     const h = harness(on)

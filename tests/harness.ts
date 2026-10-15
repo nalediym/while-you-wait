@@ -2,13 +2,20 @@
 // turns and panes answer as a desktop session would, and every pane the
 // plugin opens or closes is recorded so a test can assert on it.
 
-import type { On, UiPane } from 'claude-code'
+import type { AgentInfo, On, UiPane } from 'claude-code'
 
-export type Harness = { opened: string[]; closed: string[]; status: (string | undefined)[]; store: Map<string, unknown> }
+export type Harness = {
+  opened: string[]
+  closed: string[]
+  status: (string | undefined)[]
+  store: Map<string, unknown>
+  /** This session's agents, as $.agent.list() answers: set a status to start or finish one. */
+  agents: AgentInfo[]
+}
 
 /** `stored`: what $.store holds when the session starts (a previous session's save). */
 export const harness = (on: On, stored: Record<string, unknown> = {}): Harness => {
-  const h: Harness = { opened: [], closed: [], status: [], store: new Map(Object.entries(stored)) }
+  const h: Harness = { opened: [], closed: [], status: [], store: new Map(Object.entries(stored)), agents: [] }
   on('store.get', (_$, e) => ({ value: JSON.parse(JSON.stringify(h.store.get(e.key) ?? null)) ?? undefined }))
   on('store.set', (_$, e) => {
     h.store.set(e.key, JSON.parse(JSON.stringify(e.value)))
@@ -35,6 +42,7 @@ export const harness = (on: On, stored: Record<string, unknown> = {}): Harness =
   })
   on('classic.PermissionRequest', () => ({}))
   on('classic.Notification', () => ({}))
+  on('agent.list', () => ({ value: h.agents.map(a => ({ ...a })) }))
   on('ui.panes', () => ({ value: [...panes.values()] }))
   return h
 }
