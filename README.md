@@ -78,60 +78,32 @@ Answer `y` to add the marketplace, then pick a scope (user is the first option).
 
 v1 draws for the **desktop app** (`desktop` surface). Terminal support is on the roadmap.
 
-## Development
+## What it keeps
 
-The plugin is a Claude Code function-hooks mod: `hooks/register.tsx` connects
-engine events to a pure model.
+- **Your games and bests** live in Claude Code's plugin store on your machine,
+  so you can pick up a game in any session.
+- **Stats** live only in the session's memory.
+- **No network.** The plugin makes no network calls, and nothing leaves your
+  machine.
+- **Developer tools are off by default.** With the `devTools` option on, it
+  also keeps a timeline of its last 80 events. It never records prompts or file
+  contents.
 
-```
-.claude-plugin/plugin.json      manifest (+ marketplace.json)
-hooks/register.tsx              event wiring: turns, tools, attention, /games, the pane
-hooks/model.ts                  pure model: save data, stats, one input -> next state
-hooks/games/                    pure game logic (2048, minesweeper, crossword, rng)
-hooks/games/puzzles.ts          GENERATED from data/crosswords.json
-hooks/ui/device.ts              the handheld as one SVG (pure: state in, svg + hit map out)
-hooks/ui/pixelfont.ts           the 5x7 / 3x5 pixel fonts
-hooks/ui/pad.tsx, hit.ts        the invisible input layer over the drawing
-hooks/ui/pane*.tsx              the pane (handheld + text); a plain fallback for surfaces without Svg
-types/index.d.ts                every $.state value the mod keeps
-tests/                          unit tests + a desktop pane test of the whole loop
-scripts/                        dev tools (below)
-```
+## Contributing
 
-Rendering stays in `hooks/ui/`. `device.ts` turns state into an SVG plus a hit
-map, and `pane-cells.tsx` is a plain Box drawing for surfaces without `Svg`.
-That plain drawing is where a terminal surface would start.
+New games, crosswords and terminal support are all welcome.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers:
 
-```bash
-claude plugin validate .
-```
+- how to run your copy
+- the dev tools
+- how the pieces fit together
+- a step-by-step guide to adding a game
+
+One command checks everything:
 
 ```bash
-claude plugin test .
+./scripts/check.sh
 ```
-
-```bash
-./scripts/typecheck.sh
-```
-
-```bash
-claude --plugin-dir .
-```
-
-Dev tools in `scripts/`:
-
-- `typecheck.sh`: copies this machine's `claude-code.d.ts` into place and runs `tsc`.
-- `preview/devices.ts`: renders the handheld for every screen into one page, straight
-  from the drawing code (`bun scripts/preview/devices.ts .preview/index.html`).
-  The SVG draws the same in a browser as in the app.
-- `preview.ts`: drives the whole pane through the engine and renders an HTML
-  contact sheet (`bun scripts/preview.ts --out .preview/pane.html`).
-- `preview/readme-shots.ts`: regenerates the images in `docs/`.
-- `gen-crossword.ts`: a backtracking 5×5 grid filler over `wordlist.txt`.
-- `check-crosswords.ts`: validates every puzzle (numbering, checked cells,
-  answers in the word list, clue coverage).
-- `build-puzzles.ts`: regenerates `hooks/games/puzzles.ts` from
-  `data/crosswords.json` (`--check` reports when the generated file is stale).
 
 ## Roadmap (v2)
 

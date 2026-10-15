@@ -1,0 +1,24 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      DISABLE_AUTOUPDATER: '1'
+      # The plugin API's types only exist where Claude Code's plugin-authoring
+      # skill has run, so tsc runs locally (scripts/typecheck.sh), not here.
+      SKIP_TYPECHECK: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Pinned so a new engine can't break CI by surprise; bump it on purpose.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.300
+      - run: ./scripts/check.sh
