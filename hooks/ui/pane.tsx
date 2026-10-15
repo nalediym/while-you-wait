@@ -44,7 +44,7 @@ export const drawPane = (els: PaneElements, view: PaneView, act: PaneActions): R
         <Text color={GB.lightest} bold>
           {live.banner === 'done' ? "✓ CLAUDE'S DONE" : '! CLAUDE NEEDS YOU'}
         </Text>
-        <Text color={GB.light}>{live.banner === 'done' ? 'Game saved exactly where you left it.' : 'Game paused & saved. Go answer Claude.'}</Text>
+        <Text color={GB.light} wrap="wrap">{live.banner === 'done' ? 'Game saved exactly where you left it.' : 'Game paused & saved. Go answer Claude.'}</Text>
         <Button key="jump-back" variant="primary" onPress={act.jumpBack}>
           ↩ Back to Claude
         </Button>
@@ -120,7 +120,7 @@ const drawScreen = (els: PaneElements, view: PaneView, act: PaneActions): Render
             2048 <Text color={GB.dark}>SCORE {g.score} · BEST {Math.max(save.scores.best2048Score, g.score)}</Text>
           </Text>
           {drawLcd(els, view, 'lcd-2048', grid2048(g))}
-          {status ? <Text color={GB.darkest} bold>{status}</Text> : null}
+          {status ? <Text color={GB.darkest} bold wrap="wrap">{status}</Text> : null}
         </Box>
       )
     }
@@ -140,7 +140,7 @@ const drawScreen = (els: PaneElements, view: PaneView, act: PaneActions): Render
             </Button>
           </Box>
           {drawLcd(els, view, 'lcd-mines', gridMines(m, false))}
-          {status ? <Text color={GB.darkest} bold>{status}</Text> : null}
+          {status ? <Text color={GB.darkest} bold wrap="wrap">{status}</Text> : null}
         </Box>
       )
     }
@@ -217,7 +217,7 @@ const drawPaused = (els: PaneElements, view: PaneView): RenderElement => {
       <Text color={GB.darkest} bold>
         ❚❚ PAUSED
       </Text>
-      <Text color={GB.dark}>{game ? `${game.name} is frozen exactly as you left it.` : 'Nothing running.'}</Text>
+      <Text color={GB.dark} wrap="wrap">{game ? `${game.name} is frozen exactly as you left it.` : 'Nothing running.'}</Text>
     </Box>
   )
 }
@@ -229,7 +229,7 @@ const drawResting = (els: PaneElements, today: Tally, allTime: Tally, view: Pane
       <Text color={GB.darkest} bold>
         CLAUDE'S RESTING
       </Text>
-      <Text color={GB.dark}>— go ship something. ✦</Text>
+      <Text color={GB.dark} wrap="wrap">— go ship something. ✦</Text>
       <Box marginTop={1} flexDirection="column">
         {drawStats(els, today, allTime, view)}
       </Box>
@@ -309,7 +309,7 @@ const drawControls = ({ Box, Button, Text }: PaneElements, view: PaneView, act: 
         <Button key="btn-select" label="SELECT" plain onPress={() => act.send({ kind: 'select' })} />
         <Button key="btn-start" label="START" plain onPress={() => act.send({ kind: 'start' })} />
       </Box>
-      <Text color={GB.light}>{screen === 'menu' ? 'SELECT menu · START play' : 'SELECT menu · START new game'}</Text>
+      <Text color={GB.light} wrap="wrap">{screen === 'menu' ? 'SELECT menu · START play' : 'SELECT menu · START new game'}</Text>
     </Box>
   )
 }

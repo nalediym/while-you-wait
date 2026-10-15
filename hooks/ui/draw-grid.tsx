@@ -15,9 +15,9 @@ export const drawGrid = ({ Box, Text }: GridElements, g: Grid): RenderElement =>
   const rows: Grid['cells'][] = []
   for (let i = 0; i < g.cells.length; i += g.cols) rows.push(g.cells.slice(i, i + g.cols))
   return (
-    <Box flexDirection="column" backgroundColor={g.line} rowGap={g.gap} alignSelf="flex-start">
+    <Box flexDirection="column" backgroundColor={g.line} rowGap={g.gapY} alignSelf="flex-start">
       {rows.map(row => (
-        <Box flexDirection="row" columnGap={g.gap}>
+        <Box flexDirection="row" columnGap={g.gapX}>
           {row.map(cell => {
             const lines: string[] = Array(g.ch).fill(' '.repeat(g.cw))
             const mid = Math.floor((g.ch - (cell.sup ? 0 : 1)) / 2)
