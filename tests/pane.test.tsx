@@ -278,7 +278,7 @@ describe('the handheld on desktop', () => {
     const callTool = $.tool.call as unknown as (e: object) => Promise<{ result?: unknown }>
     const ran = await callTool({ tool: 'mcp__while-you-wait__debug', tool_use_id: 'd1', action: 'status' })
     const report = JSON.parse(String(ran.result))
-    expect(report.build).toBe('0.3.4')
+    expect(report.build).toBe('0.3.5')
     expect(report.live).toMatchObject({ phase: 'working', agents: 1, isTurnRunning: true })
     expect(report.timeline.map((t: { event: string }) => t.event)).toEqual(expect.arrayContaining(['session.start', 'turn.start', 'agents']))
     const on2 = JSON.parse(String((await callTool({ tool: 'mcp__while-you-wait__debug', tool_use_id: 'd2', action: 'test_on' })).result))

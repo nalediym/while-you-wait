@@ -161,13 +161,14 @@ const drawControls = ({ Box, Button, Input }: PaneElements, view: PaneView, act:
             {view.live.keyboardMode ? '⌨ Keyboard on' : '⌨ Use keyboard'}
           </Button>
           {view.live.keyboardMode ? (
-            // The desktop sends a pane's keys only into a text field, so keyboard mode is one,
-            // focused for you: what you type there is read as game keys.
+            // The desktop sends a pane's keys only into a text field, so keyboard mode is one:
+            // what you type there is read as game keys. The app accepts a request to focus it
+            // but the keys don't land there (checked live), so it says to click it.
             <Box marginTop={1} width="100%">
               <Input
                 key="keys"
                 label="Keys"
-                placeholder={`${KEY_HELP[screen] ?? 'Keys go here'} (click here if keys stop)`}
+                placeholder={`Click here, then: ${KEY_HELP[screen] ?? 'type'}`}
                 value=""
                 autoFocus
                 onInput={value => act.typed(value)}
