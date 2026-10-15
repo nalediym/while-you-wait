@@ -4,6 +4,10 @@ A tiny Game Boy–style arcade that lives in a side pane of Claude Code, and is
 **only playable while Claude is working**. Play a quick game while Claude runs a
 long task, and leave your phone alone.
 
+<p align="center">
+  <img src="docs/demo.webp" width="480" alt="A 30-second loop: the arcade is locked while Claude rests, opens by itself after Claude has worked a minute, plays Minesweeper, a crossword and 2048 while two background agents finish, then says Claude's done mid-game">
+</p>
+
 <p>
   <img src="docs/2048.svg" width="230" alt="The handheld playing 2048">
   <img src="docs/mines.svg" width="230" alt="The handheld playing Minesweeper">

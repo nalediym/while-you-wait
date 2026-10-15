@@ -201,7 +201,8 @@ bun scripts/preview.ts --out .preview/pane.html
 
 In the Claude desktop app, `.claude/launch.json` has a `preview` server that
 serves `.preview/` on port 4517. `bun scripts/preview/readme-shots.ts`
-regenerates `docs/*.svg`.
+regenerates the handheld images in `docs/`, and `bun scripts/preview/social.ts`
+regenerates the repo's social preview image.
 
 ## Pull requests
 
