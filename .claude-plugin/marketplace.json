@@ -1,0 +1,12 @@
+{
+  "name": "while-you-wait",
+  "description": "A Game Boy-style arcade pane for Claude Code, playable only while Claude works.",
+  "owner": { "name": "nalediym" },
+  "plugins": [
+    {
+      "name": "while-you-wait",
+      "source": "./",
+      "description": "2048, Minesweeper and mini crosswords in a side pane, playable only while Claude is working."
+    }
+  ]
+}
