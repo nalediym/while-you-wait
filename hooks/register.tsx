@@ -2,7 +2,6 @@
 // only while Claude works. This file only wires engine events to the pure
 // model (model.ts) and the drawing (ui/pane.tsx).
 
-import { update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { ClickLog, Lcd, Live, Save, SessionStats, TraceEntry } from '../types'
@@ -25,31 +24,60 @@ const sessionRef = { plugin: 'while-you-wait', key: 'session' } as const
 const CLICK_LOG_KEY = 'click-log' // the last screen taps, raw, for diagnosing taps that land wrong
 const TRACE_KEY = 'debug-timeline' // the last events and the state after each: what the self-test reads
 const AGENT_POLL_MS = 3_000
-export const BUILD = '0.3.0' // keep in step with plugin.json; the timeline records which build loaded
+export const BUILD = '0.3.1' // keep in step with plugin.json; the timeline records which build loaded
 const DEBUG_TOOL = 'mcp__while-you-wait__debug'
 const lcdRef = { plugin: 'while-you-wait', key: 'lcd' } as const
 
-// Spread over a fresh value so a Live saved by an older version of this code still reads whole.
-const getLive = async ($: EngineInterface): Promise<Live> => ({ ...M.freshLive(), ...(await $.state.get(liveRef)).value })
-const getSave = async ($: EngineInterface): Promise<Save> => (await $.state.get(saveRef)).value ?? M.freshSave()
-const getSession = async ($: EngineInterface): Promise<SessionStats> => (await $.state.get(sessionRef)).value ?? M.freshSession()
+// Read field by field over a fresh value, so a Live an older build wrote reads whole and clean.
+const LIVE_KEYS = Object.keys(M.freshLive()) as (keyof Live)[]
+const cleanLive = (held: Partial<Live> | undefined): Live => {
+  const fresh = M.freshLive()
+  return Object.fromEntries(LIVE_KEYS.map(k => [k, held && k in held ? held[k] : fresh[k]])) as Live
+}
 
-const setLive = ($: EngineInterface, f: (l: Live) => Live) => update($, liveRef, l => f({ ...M.freshLive(), ...l }))
-/** This session's stats: $.state only, so they last the session (and a hot reload) and no longer. */
-const setSession = ($: EngineInterface, f: (s: SessionStats) => SessionStats) => update($, sessionRef, s => f(s ?? M.freshSession()))
+/**
+ * Where Claude is and this session's stats, as the logic sees them: kept in
+ * this module, shared by every hook and always current. A hook's own reads
+ * of $.state show the moment its dispatch began, so a hook that started
+ * before a turn did would otherwise act on "no turn running" and write it
+ * back. $.state still holds both, for drawing (a write redraws its readers)
+ * and so a hot reload picks them up: each is read from there once per load.
+ */
+let liveNow: Live | undefined
+let sessionNow: SessionStats | undefined
+const getLive = async ($: EngineInterface): Promise<Live> => (liveNow ??= cleanLive((await $.state.get(liveRef)).value))
+const getSession = async ($: EngineInterface): Promise<SessionStats> =>
+  (sessionNow ??= (await $.state.get(sessionRef)).value ?? M.freshSession())
+/** For drawing: reads $.state, which subscribes the pane to its changes. */
+const drawnLive = async ($: EngineInterface): Promise<Live> => cleanLive((await $.state.get(liveRef)).value)
+const drawnSession = async ($: EngineInterface): Promise<SessionStats> => (await $.state.get(sessionRef)).value ?? M.freshSession()
+const getSave = async ($: EngineInterface): Promise<Save> => (await $.state.get(saveRef)).value ?? M.freshSave()
+
 
 const readStore = async ($: EngineInterface): Promise<unknown> => (await $.store.get(STORE_KEY)) ?? (await $.store.get(OLD_STORE_KEY))
+
+/**
+ * Every change this session makes runs here, one at a time and in order, and
+ * each one starts from the latest values. Hooks run concurrently (a turn
+ * starting while an agent finishes), so a change computed from an older read
+ * would otherwise write over a newer one. Work queued here must not queue more.
+ */
+let queue: Promise<unknown> = Promise.resolve()
+const serial = <T,>(work: () => Promise<T>): Promise<T> => {
+  const run = queue.then(work)
+  queue = run.catch(() => undefined)
+  return run
+}
 
 /**
  * Every session shares one save (your games and bests) in $.store, so it is
  * the source of truth: each change reads it fresh, applies just that change
  * and writes it back, then mirrors it into this session's $.state for
  * drawing. A long-lived session therefore never writes a stale copy over a
- * game you played in another one. Changes made here queue up one at a time.
+ * game you played in another one.
  */
-let queue: Promise<unknown> = Promise.resolve()
-const mutate = ($: EngineInterface, f: (s: Save, now: number) => Save): Promise<Save> => {
-  const run = queue.then(async () => {
+const mutate = ($: EngineInterface, f: (s: Save, now: number) => Save): Promise<Save> =>
+  serial(async () => {
     const now = await $.clock.now()
     const stored = await readStore($)
     const base = stored === undefined ? await getSave($) : M.loadSave(stored)
@@ -58,9 +86,25 @@ const mutate = ($: EngineInterface, f: (s: Save, now: number) => Save): Promise<
     await $.state.set(saveRef, next)
     return next
   })
-  queue = run.catch(() => undefined)
-  return run
-}
+
+type Tx = { live: Live; session: SessionStats; becameIdle?: boolean }
+
+/** Changes where Claude is (live) and this session's stats together, from their latest values. */
+const transact = ($: EngineInterface, f: (tx: Tx, now: number) => Tx): Promise<{ before: Tx; after: Tx }> =>
+  serial(async () => {
+    const now = await $.clock.now()
+    const before: Tx = { live: await getLive($), session: await getSession($) }
+    const after = f(before, now)
+    liveNow = after.live
+    sessionNow = after.session
+    if (after.live !== before.live) await $.state.set(liveRef, after.live)
+    if (after.session !== before.session) await $.state.set(sessionRef, after.session)
+    return { before, after }
+  })
+
+const setLive = ($: EngineInterface, f: (l: Live) => Live) => transact($, tx => ({ ...tx, live: f(tx.live) }))
+/** This session's stats: $.state only, so they last the session (and a hot reload) and no longer. */
+const setSession = ($: EngineInterface, f: (s: SessionStats) => SessionStats) => transact($, tx => ({ ...tx, session: f(tx.session) }))
 
 /** Picks up what other sessions saved (a game played there, their stats). */
 const refresh = ($: EngineInterface) => mutate($, s => s)
@@ -69,9 +113,10 @@ const isPaneOpen = async ($: EngineInterface) => (await $.ui.panes()).some(p => 
 
 /** Offers the pane once per busy stretch: opens it beside the transcript, never taking focus. */
 const offer = async ($: EngineInterface) => {
-  const live = await getLive($)
-  if (!M.shouldOffer(live, await $.clock.now())) return
-  await setLive($, l => ({ ...l, offeredFor: live.busySince }))
+  const { before, after } = await transact($, (tx, now) =>
+    M.shouldOffer(tx.live, now) ? { ...tx, live: { ...tx.live, offeredFor: tx.live.busySince } } : tx,
+  )
+  if (before.live === after.live) return
   if (await isPaneOpen($)) return trace($, 'offer', 'pane already open')
   const opened = await $.ui.open({ id: PANE, title: TITLE })
   if (!opened.isPlaced) $.ui.status("🎮 Claude's on a long one — /games while you wait")
@@ -100,14 +145,10 @@ const send = async ($: EngineInterface, input: Input) => {
   if (changed && !live.playedThisTurn) await setLive($, l => ({ ...l, playedThisTurn: true }))
 }
 
-/** Applies a settled phase change; going idle freezes every game clock, saved exactly as it is. */
-const applySettled = async ($: EngineInterface, r: { live: Live; session: SessionStats; becameIdle: boolean }) => {
-  await $.state.set(sessionRef, r.session)
-  await $.state.set(liveRef, r.live)
-  if (r.becameIdle) {
-    await mutate($, M.pauseAll)
-    $.ui.status(undefined)
-  }
+/** Claude just went idle: freeze every game clock, saved exactly as it is. */
+const wentIdle = async ($: EngineInterface) => {
+  await mutate($, M.pauseAll)
+  $.ui.status(undefined)
 }
 
 const RUNNING = new Set(['pending', 'running'])
@@ -115,27 +156,27 @@ const RUNNING = new Set(['pending', 'running'])
 /** Recounts this session's running agents; the last one finishing is when Claude is done. */
 const syncAgents = async ($: EngineInterface) => {
   const running = (await $.agent.list()).filter(a => RUNNING.has(a.status)).length
-  const live = await getLive($)
-  if (running === live.agents) return
-  const wasIdle = live.phase === 'idle'
-  const r = M.agentsChanged(live, await getSession($), running, await $.clock.now())
-  await applySettled($, r)
-  await trace($, 'agents', `${live.agents} -> ${running}${r.becameIdle ? ', Claude done' : ''}`)
-  if (wasIdle && running > 0) await scheduleOffer($)
+  const { before, after } = await transact($, (tx, now) => (running === tx.live.agents ? tx : M.agentsChanged(tx.live, tx.session, running, now)))
+  if (before.live.agents === after.live.agents) return
+  if (after.becameIdle) await wentIdle($)
+  await trace($, 'agents', `${before.live.agents} -> ${running}${after.becameIdle ? ', Claude done' : ''}`)
+  if (before.live.phase === 'idle' && after.live.phase !== 'idle') await scheduleOffer($)
 }
 
-const logClick = async ($: EngineInterface, entry: Omit<ClickLog, 'at'>) => {
-  const log = ((await $.store.get(CLICK_LOG_KEY)) as ClickLog[] | undefined) ?? []
-  await $.store.set(CLICK_LOG_KEY, [...log, { at: await $.clock.now(), ...entry }].slice(-30))
-}
+const logClick = ($: EngineInterface, entry: Omit<ClickLog, 'at'>) =>
+  serial(async () => {
+    const log = ((await $.store.get(CLICK_LOG_KEY)) as ClickLog[] | undefined) ?? []
+    await $.store.set(CLICK_LOG_KEY, [...log, { at: await $.clock.now(), ...entry }].slice(-30))
+  })
 
 /** Appends to the debug timeline: the event and the state right after it. */
-const trace = async ($: EngineInterface, event: string, note?: string) => {
-  const live = await getLive($)
-  const entry: TraceEntry = { at: await $.clock.now(), event, phase: live.phase, agents: live.agents, isTurnRunning: live.isTurnRunning, testMode: live.testMode, ...(note ? { note } : {}) }
-  const log = ((await $.store.get(TRACE_KEY)) as TraceEntry[] | undefined) ?? []
-  await $.store.set(TRACE_KEY, [...log, entry].slice(-80))
-}
+const trace = ($: EngineInterface, event: string, note?: string) =>
+  serial(async () => {
+    const live = await getLive($)
+    const entry: TraceEntry = { at: await $.clock.now(), event, phase: live.phase, agents: live.agents, isTurnRunning: live.isTurnRunning, testMode: live.testMode, ...(note ? { note } : {}) }
+    const log = ((await $.store.get(TRACE_KEY)) as TraceEntry[] | undefined) ?? []
+    await $.store.set(TRACE_KEY, [...log, entry].slice(-80))
+  })
 
 const setTestMode = async ($: EngineInterface, on: boolean) => {
   await setLive($, l => ({ ...l, testMode: on }))
@@ -188,8 +229,8 @@ export const register: Register = on => {
     })
     // A hot reload fires this again mid-session: keep what $.state already holds.
     if ((await $.state.get(saveRef)).version === 0) await $.state.set(saveRef, M.loadSave(await readStore($)))
-    if ((await $.state.get(sessionRef)).version === 0) await $.state.set(sessionRef, M.freshSession())
-    if ((await $.state.get(liveRef)).version === 0) await $.state.set(liveRef, M.freshLive())
+    if ((await $.state.get(sessionRef)).version === 0) await $.state.set(sessionRef, (sessionNow = M.freshSession()))
+    if ((await $.state.get(liveRef)).version === 0) await $.state.set(liveRef, (liveNow = M.freshLive()))
     else await scheduleOffer($)
     await syncAgents($).catch(() => undefined) // a reload mid-run must pick up agents already running
     await trace($, 'session.start', `build ${BUILD}`)
@@ -221,8 +262,7 @@ export const register: Register = on => {
   })
 
   on('turn.start', async ($, e, next) => {
-    const now = await $.clock.now()
-    await setLive($, l => M.turnStarted(l, e.turnId, now))
+    await transact($, (tx, now) => ({ ...tx, live: M.turnStarted(tx.live, e.turnId, now) }))
     await trace($, 'turn.start')
     await refresh($)
     $.ui.status(undefined)
@@ -238,10 +278,10 @@ export const register: Register = on => {
       return next(e)
     }
     await syncAgents($).catch(() => undefined) // agents still running keep the arcade open
-    const done = M.turnCompleted(await getLive($), await getSession($), await $.clock.now(), e.reason === 'answer')
-    await applySettled($, done)
-    if (!done.becameIdle) await mutate($, M.pauseAll) // your turn's over: freeze clocks until you play again
-    await trace($, 'turn.complete', done.becameIdle ? "Claude's done" : `still busy: ${done.live.agents} agents`)
+    const { after } = await transact($, (tx, now) => M.turnCompleted(tx.live, tx.session, now, e.reason === 'answer'))
+    if (after.becameIdle) await wentIdle($)
+    else await mutate($, M.pauseAll) // your turn's over: freeze clocks until you play again
+    await trace($, 'turn.complete', after.becameIdle ? "Claude's done" : `still busy: ${after.live.agents} agents`)
     return next(e)
   })
 
@@ -300,9 +340,9 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const els = $.ui.resolve(e)
-    const live = await getLive($)
+    const live = await drawnLive($)
     const save = await getSave($)
-    const session = await getSession($)
+    const session = await drawnSession($)
     const lcd: Lcd = (await $.state.get(lcdRef)).value ?? { hasFailed: false }
     return drawPane(
       { Box: els.Box, Text: els.Text, Button: els.Button, ...('Client' in els ? { Client: els.Client } : {}), ...('Svg' in els ? { Svg: els.Svg } : {}), ...('Input' in els ? { Input: els.Input } : {}) },

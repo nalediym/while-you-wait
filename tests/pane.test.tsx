@@ -189,6 +189,28 @@ describe('the handheld on desktop', () => {
     expect(await ui.find({ key: 'jump-back' })).toBeDefined()
   })
 
+  test('race: a turn starting as the last agent finishes stays a running turn (seen live)', async ($, on) => {
+    const clock = mock.clock(on, { now: T0 })
+    const h = harness(on)
+    await startSession($)
+    const ui = await mountPane($)
+    await startTurn($, 't1')
+    h.agents = [{ id: 'a1', description: 'x', type: 'general-purpose', status: 'running' }] as never
+    await completeTurn($, 't1') // syncs: 1 agent, so still working
+    expect(await alt(ui)).toMatch(/1 background agent working/)
+    // The agent finishes and wakes Claude: its turn.complete and the new turn.start race.
+    h.agents = [{ ...h.agents[0]!, status: 'completed' }] as never
+    await Promise.all([
+      $.turn.complete({ answer: 'ok', durationMs: 1, isAborted: false, turnId: 'a-turn', reason: 'answer', agentId: 'a1' } as never),
+      startTurn($, 't2'),
+    ])
+    await clock.advance(3_100)
+    const callTool = $.tool.call as unknown as (e: object) => Promise<{ result?: unknown }>
+    const report = JSON.parse(String((await callTool({ tool: 'mcp__while-you-wait__debug', tool_use_id: 'd', action: 'status' })).result))
+    expect(report.live).toMatchObject({ isTurnRunning: true, phase: 'working', agents: 0 })
+    expect(await alt(ui)).not.toMatch(/resting/)
+  })
+
   test('test mode: /games test makes it playable while Claude is idle, and turns off again', async ($, on) => {
     mock.clock(on, { now: T0 })
     const h = harness(on)
@@ -218,7 +240,7 @@ describe('the handheld on desktop', () => {
     const callTool = $.tool.call as unknown as (e: object) => Promise<{ result?: unknown }>
     const ran = await callTool({ tool: 'mcp__while-you-wait__debug', tool_use_id: 'd1', action: 'status' })
     const report = JSON.parse(String(ran.result))
-    expect(report.build).toBe('0.3.0')
+    expect(report.build).toBe('0.3.1')
     expect(report.live).toMatchObject({ phase: 'working', agents: 1, isTurnRunning: true })
     expect(report.timeline.map((t: { event: string }) => t.event)).toEqual(expect.arrayContaining(['session.start', 'turn.start', 'agents']))
     const on2 = JSON.parse(String((await callTool({ tool: 'mcp__while-you-wait__debug', tool_use_id: 'd2', action: 'test_on' })).result))
