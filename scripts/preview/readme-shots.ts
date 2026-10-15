@@ -6,7 +6,7 @@ import * as Mines from '../../hooks/games/minesweeper'
 import * as Cw from '../../hooks/games/crossword'
 import { PUZZLES } from '../../hooks/games/puzzles'
 import * as M from '../../hooks/model'
-import { drawDevice } from '../../hooks/ui/device'
+import { DEVICE_H, DEVICE_W, drawDevice } from '../../hooks/ui/device'
 
 const T0 = new Date(2026, 9, 15, 15, 30).getTime()
 const save: M.Save = M.freshSave()
@@ -26,6 +26,7 @@ const shots: [string, M.Save, M.Live][] = [
 ]
 for (const [name, s, live] of shots) {
   const { svg } = drawDevice({ save: s, live, session, now: T0 + 42_000, puzzles: PUZZLES })
-  writeFileSync(`docs/${name}.svg`, svg.replace(/width="\d+" height="\d+"/, 'width="300" height="432"'))
+  // Sized from the device's own aspect, so the image has no empty band above or below.
+  writeFileSync(`docs/${name}.svg`, svg.replace(/width="\d+" height="\d+"/, `width="300" height="${Math.round((300 * DEVICE_H) / DEVICE_W)}"`))
 }
 console.log(`${shots.length} images -> docs/`)
