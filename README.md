@@ -1,5 +1,7 @@
 # while-you-wait
 
+[![Plugin Name on HOL Registry (Trust Score)](https://img.shields.io/endpoint?url=https%3A%2F%2Fhol.org%2Fapi%2Fregistry%2Fbadges%2Fplugin%3Fslug%3DOWNER%252FREPO%26metric%3Dtrust%26style%3Dfor-the-badge%26label%3DPlugin+Name)](https://hol.org/registry/plugins/OWNER%2FREPO)
+
 A tiny Game Boy–style arcade for the Claude desktop app that **only plays while
 Claude is working**. Claude works for a minute, and the arcade opens. Claude's
 done, and it locks. Your phone stays down.
